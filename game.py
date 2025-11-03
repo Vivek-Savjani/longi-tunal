@@ -34,13 +34,28 @@ class Player(pygame.sprite.Sprite):
                 self.rect.top = 0
             case _ if self.rect.bottom > screen_height:
                 self.rect.bottom = 600
-
+class Enemy(pygame.sprite.Sprite):
+    def __init__(self):
+        super(Enemy, self).__init__()
+        self.surface = pygame.Surface((30, 30))
+        self.surface.fill((0, 0, 255))
+        self.rect = self.surface.get_rect()
+        
+        def update(self):
+            self.rect.move_ip(-1, 0)
+            if self.rect.right < 0:
+                self.kill()
+        
 pygame.init()
 screen_width, screen_height = 800, 600
 screen = pygame.display.set_mode((screen_width, screen_height))
-running = True
-
 player = Player()
+enemy1 = Enemy()
+enemies = pygame.sprite.Group()
+enemies.add(enemy1)
+all_sprites = pygame.sprite.Group()
+all_sprites.add(player,enemies)
+running = True
 
 while running:
     for event in pygame.event.get():
@@ -50,6 +65,7 @@ while running:
     player.update(pygame.key.get_pressed())
     screen.fill((255, 255, 255))
     pygame.draw.circle(screen, (0, 0, 0), (750, 300), 15)
-    screen.blit(player.surface,player.rect)
+    for entity in all_sprites:
+        screen.blit(entity.surface,entity.rect)
     pygame.display.flip()
     
