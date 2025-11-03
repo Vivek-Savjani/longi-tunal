@@ -1,4 +1,4 @@
-import pygame
+import pygame,random
 from pygame.locals import (
     K_UP,
     K_DOWN,
@@ -39,7 +39,11 @@ class Enemy(pygame.sprite.Sprite):
         super(Enemy, self).__init__()
         self.surface = pygame.Surface((30, 30))
         self.surface.fill((0, 0, 255))
-        self.rect = self.surface.get_rect()
+        self.rect = self.surface.get_rect(
+            center=(
+            random.randint(0, screen_width),
+                random.randint(0, screen_height),)
+        )   
         
         def update(self):
             self.rect.move_ip(-1, 0)
@@ -67,5 +71,8 @@ while running:
     pygame.draw.circle(screen, (0, 0, 0), (750, 300), 15)
     for entity in all_sprites:
         screen.blit(entity.surface,entity.rect)
+    if pygame.sprite.spritecollideany(player, enemies):
+        player.kill()
+        running = False
     pygame.display.flip()
     
