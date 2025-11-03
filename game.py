@@ -17,13 +17,13 @@ class Player(pygame.sprite.Sprite):
     def update(self, pressed_keys):
         match pressed_keys:
             case _ if pressed_keys[K_UP]:
-                self.rect.move_ip(0, -1)
+                self.rect.move_ip(0, -5)
             case _ if pressed_keys[K_DOWN]:
-                self.rect.move_ip(0, 1)
+                self.rect.move_ip(0, 5)
             case _ if pressed_keys[K_LEFT]:
-                self.rect.move_ip(-1, 0)
+                self.rect.move_ip(-5, 0)
             case _ if pressed_keys[K_RIGHT]:
-                self.rect.move_ip(1, 0)
+                self.rect.move_ip(5, 0)
                 
         match self.rect:
             case _ if self.rect.left < 0:
@@ -43,14 +43,15 @@ class Enemy(pygame.sprite.Sprite):
             center=(
             random.randint(0, screen_width),
                 random.randint(0, screen_height),)
-        )   
-        
-        def update(self):
-            self.rect.move_ip(-1, 0)
-            if self.rect.right < 0:
-                self.kill()
+        )     
+    def update(self):
+        self.rect.move_ip(-1, 0)
+        if self.rect.right < 0:
+            self.kill()
+            
         
 pygame.init()
+clock = pygame.time.Clock()
 screen_width, screen_height = 800, 600
 screen = pygame.display.set_mode((screen_width, screen_height))
 player = Player()
@@ -67,6 +68,7 @@ while running:
             pygame.quit()
             running = False
     player.update(pygame.key.get_pressed())
+    enemies.update()
     screen.fill((255, 255, 255))
     pygame.draw.circle(screen, (0, 0, 0), (750, 300), 15)
     for entity in all_sprites:
@@ -75,4 +77,5 @@ while running:
         player.kill()
         running = False
     pygame.display.flip()
+    clock.tick(120) ## cap the frame rate to 120 FPS (useful for timing with the sound wave form in furture)
     
