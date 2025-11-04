@@ -1,4 +1,4 @@
-import pygame,random
+import pygame,random,threading,asyncio,websockets,json
 from pygame.locals import (
     K_UP,
     K_DOWN,
@@ -14,7 +14,19 @@ class Player(pygame.sprite.Sprite):
         self.surface = pygame.Surface((50, 50))
         self.surface.fill((255, 0, 0))
         self.rect = self.surface.get_rect()
-    def update(self, pressed_keys):
+    def update(self,commands, pressed_keys):
+        for command in commands:
+            movement = json.loads(command)['command']
+            match movement:
+                case "up":
+                    self.rect.move_ip(0, -5)
+                case "down":
+                    self.rect.move_ip(0, 5)
+                case "left":
+                    self.rect.move_ip(-5, 0)
+                case "right":
+                    self.rect.move_ip(5, 0)
+            commands.pop(0)
         match pressed_keys:
             case _ if pressed_keys[K_UP]:
                 self.rect.move_ip(0, -5)
@@ -49,6 +61,19 @@ class Enemy(pygame.sprite.Sprite):
         if self.rect.right < 0:
             self.kill()
             
+
+async def controller_server(websocket,):
+    global command
+    async for message in websocket:
+        print("Received:", message)
+        command.append(message)  # store last command
+
+async def start_server():
+    async with websockets.serve(controller_server, "0.0.0.0", 8765) as server:
+       await server.serve_forever()
+
+# Run the WebSocket server in background thread
+threading.Thread(target=lambda: asyncio.run(start_server()), daemon=True).start()
         
 pygame.init()
 clock = pygame.time.Clock()
@@ -61,13 +86,14 @@ enemies.add(enemy1)
 all_sprites = pygame.sprite.Group()
 all_sprites.add(player,enemies)
 running = True
+command = []        
 
 while running:
     for event in pygame.event.get():
         if ((event.type == KEYDOWN) and (event.key == K_ESCAPE)) or (event.type == pygame.QUIT):
             pygame.quit()
             running = False
-    player.update(pygame.key.get_pressed())
+    player.update(command,pygame.key.get_pressed())
     enemies.update()
     screen.fill((255, 255, 255))
     pygame.draw.circle(screen, (0, 0, 0), (750, 300), 15)
