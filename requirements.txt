@@ -1,2 +1,4 @@
 pygame
+numpy
+sounddevice
 websockets
