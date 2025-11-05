@@ -21,23 +21,23 @@ class Player(pygame.sprite.Sprite):
             movement = json.loads(command)['command']
             match movement:
                 case "up":
-                    self.rect.move_ip(0, -5)
+                    self.rect.move_ip(0, -8)
                 case "down":
-                    self.rect.move_ip(0, 5)
+                    self.rect.move_ip(0, 8)
                 case "left":
-                    self.rect.move_ip(-5, 0)
+                    self.rect.move_ip(-8, 0)
                 case "right":
-                    self.rect.move_ip(5, 0)
+                    self.rect.move_ip(8, 0)
             commands.pop(0)
         match pressed_keys:
             case _ if pressed_keys[K_UP]:
-                self.rect.move_ip(0, -5)
+                self.rect.move_ip(0, -8)
             case _ if pressed_keys[K_DOWN]:
-                self.rect.move_ip(0, 5)
+                self.rect.move_ip(0, 8)
             case _ if pressed_keys[K_LEFT]:
-                self.rect.move_ip(-5, 0)
+                self.rect.move_ip(-8, 0)
             case _ if pressed_keys[K_RIGHT]:
-                self.rect.move_ip(5, 0)
+                self.rect.move_ip(8, 0)
                 
         match self.rect:
             case _ if self.rect.left < 0:
@@ -49,7 +49,7 @@ class Player(pygame.sprite.Sprite):
             case _ if self.rect.bottom > screen_height:
                 self.rect.bottom = 600
 class Enemy(pygame.sprite.Sprite):
-    def __init__(self):
+    def __init__(self,speed):
         super(Enemy, self).__init__()
         self.surface = pygame.Surface((30, 30))
         self.surface.fill((0, 0, 255))
@@ -57,9 +57,10 @@ class Enemy(pygame.sprite.Sprite):
             center=(
             random.randint(0, screen_width),
                 random.randint(0, screen_height),)
-        )     
+        )
+        self.speed = - speed     
     def update(self):
-        self.rect.move_ip(-1, 0)
+        self.rect.move_ip(self.speed, 0)
         if self.rect.right < 0:
             self.kill()
             
@@ -83,9 +84,7 @@ def game(music_data):
     screen_width, screen_height = 800, 600
     screen = pygame.display.set_mode((screen_width, screen_height))
     player = Player()
-    enemy1 = Enemy()
     enemies = pygame.sprite.Group()
-    enemies.add(enemy1)
     all_sprites = pygame.sprite.Group()
     all_sprites.add(player,enemies)
     running = True
@@ -108,7 +107,13 @@ def game(music_data):
         pygame.display.flip()
         md = music_data.get()
         print(md)
-        clock.tick(120) ## cap the frame rate to 120 FPS (useful for timing with the sound wave form in furture)
+        if random.randint(0, 100) < int(float(md['amplitude'])):
+            speed = (float(md['bpm'])/25) + 1
+            print("Spawning enemy with speed:", speed)
+            new_enemy = Enemy(speed)
+            enemies.add(new_enemy)
+            all_sprites.add(new_enemy)
+        clock.tick(240) ## cap the frame rate to 120 FPS (useful for timing with the sound wave form in furture)
 
 def get_music_data(music_data):
     import sounddevice as sd
@@ -138,7 +143,7 @@ def get_music_data(music_data):
 
     def get_amplitude(indata):
         mono = np.mean(indata, axis=1)
-        amplitude = np.sqrt(np.mean(mono ** 2)) * 300
+        amplitude = np.sqrt(np.mean(mono ** 2)) * 100
         return f"{amplitude:.2f}"
 
     def get_current_bpm(indata):
