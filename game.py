@@ -1,5 +1,6 @@
 import pygame,random,threading,asyncio,websockets,json
 from multiprocessing import Process, Queue
+from queue import Empty
 from pygame.locals import (
     K_UP,
     K_DOWN,
@@ -17,9 +18,12 @@ class Player(pygame.sprite.Sprite):
         self.surface.fill((255, 0, 0))
         self.rect = self.surface.get_rect()
     def update(self,commands, pressed_keys):
-        for command in commands:
-            movement = json.loads(command)['command']
-            match movement:
+        try:
+            request = commands.get_nowait()
+            movement = request["command"]
+            print("Got from queue:", repr(request), type(request))
+            print(movement)
+            match  movement:
                 case "up":
                     self.rect.move_ip(0, -8)
                 case "down":
@@ -28,7 +32,8 @@ class Player(pygame.sprite.Sprite):
                     self.rect.move_ip(-8, 0)
                 case "right":
                     self.rect.move_ip(8, 0)
-            commands.pop(0)
+        except Exception:
+            pass
         match pressed_keys:
             case _ if pressed_keys[K_UP]:
                 self.rect.move_ip(0, -8)
@@ -55,7 +60,7 @@ class Enemy(pygame.sprite.Sprite):
         self.surface.fill((0, 0, 255))
         self.rect = self.surface.get_rect(
             center=(
-            random.randint(0, screen_width),
+                screen_width,
                 random.randint(0, screen_height),)
         )
         self.speed = - speed     
@@ -64,12 +69,13 @@ class Enemy(pygame.sprite.Sprite):
         if self.rect.right < 0:
             self.kill()
             
-command = []
+command = Queue()
 async def controller_server(websocket,):
     global command
     async for message in websocket:
         print("Received:", message)
-        command.append(message)  # store last command
+        data = json.loads(message)  # convert string to dict
+        command.put(data)
 
 async def start_server():
     async with websockets.serve(controller_server, "0.0.0.0", 8765) as server:
@@ -102,18 +108,25 @@ def game(music_data):
         for entity in all_sprites:
             screen.blit(entity.surface,entity.rect)
         if pygame.sprite.spritecollideany(player, enemies):
-            player.kill()
-            running = False
+            ##player.kill()
+            ##running = False
+            pass
         pygame.display.flip()
-        md = music_data.get()
-        print(md)
-        if random.randint(0, 100) < int(float(md['amplitude'])):
-            speed = (float(md['bpm'])/25) + 1
-            print("Spawning enemy with speed:", speed)
-            new_enemy = Enemy(speed)
-            enemies.add(new_enemy)
-            all_sprites.add(new_enemy)
-        clock.tick(240) ## cap the frame rate to 120 FPS (useful for timing with the sound wave form in furture)
+        try:
+            md = music_data.get_nowait()
+            if random.randint(0, 100) < int(float(md['amplitude'])):
+                speed = (float(md['bpm'])/25) + 1
+                ##print("Spawning enemy with speed:", speed)
+                new_enemy = Enemy(speed)
+                enemies.add(new_enemy)
+                all_sprites.add(new_enemy)
+        except Empty:
+            ##print("Empty Queue")
+            pass
+        except Exception as e:
+            print(f"analysis failed {e}")
+      
+        clock.tick(120) ## cap the frame rate to 120 FPS (useful for timing with the sound wave form in furture)
 
 def get_music_data(music_data):
     import sounddevice as sd
