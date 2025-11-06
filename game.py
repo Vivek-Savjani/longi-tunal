@@ -11,12 +11,20 @@ from pygame.locals import (
     QUIT,
 )
 screen_width, screen_height = 800, 600
+lanes = 3
+lane_height = screen_height / lanes
+lane_centres = [int((i * lane_height) + (lane_height / 2)) for i in range(lanes)]
 class Player(pygame.sprite.Sprite):
     def __init__(self):
         super(Player, self).__init__()
         self.surface = pygame.Surface((50, 50))
         self.surface.fill((255, 0, 255))
-        self.rect = self.surface.get_rect()
+        self.current_lane = lanes // 2
+        self.rect = self.surface.get_rect(
+            center=(100, lane_centres[self.current_lane])
+            )
+        self.key_pressed = False
+        
     def update(self,commands, pressed_keys):
         try:
             request = commands.get_nowait()
@@ -34,49 +42,54 @@ class Player(pygame.sprite.Sprite):
                     self.rect.move_ip(8, 0)
         except Exception:
             pass
-        match pressed_keys:
-            case _ if pressed_keys[K_UP]:
-                self.rect.move_ip(0, -8)
-            case _ if pressed_keys[K_DOWN]:
-                self.rect.move_ip(0, 8)
-            case _ if pressed_keys[K_LEFT]:
-                self.rect.move_ip(-8, 0)
-            case _ if pressed_keys[K_RIGHT]:
-                self.rect.move_ip(8, 0)
-                
+        if self.key_pressed == False: 
+            if pressed_keys[K_UP] and self.current_lane > 0:
+                    self.current_lane -= 1
+                    self.key_pressed = True
+            elif pressed_keys[K_DOWN] and self.current_lane < lanes - 1:
+                    self.current_lane += 1
+                    self.key_pressed = True
+        if not (pressed_keys[K_UP] or pressed_keys[K_DOWN]):
+            self.key_pressed = False
+        
+
         match self.rect:
             case _ if self.rect.left < 0:
-                self.rect.left = 0
+                    self.rect.left = 0
             case _ if self.rect.right > screen_width:
-                self.rect.right = 800
+                    self.rect.right = 800
             case _ if self.rect.top < 0:
-                self.rect.top = 0
+                    self.rect.top = 0
             case _ if self.rect.bottom > screen_height:
-                self.rect.bottom = 600
+                    self.rect.bottom = 600
+        self.rect.center = (100,lane_centres[self.current_lane])
+    
 class Enemy(pygame.sprite.Sprite):
     def __init__(self,speed,amplitude,pitch):
         super(Enemy, self).__init__()
         if pitch <= 0.33:
-            self.surface = pygame.Surface((80,50))
-            self.surface.fill((0, 255, 255))
+            self.surface = pygame.Surface((80,lane_height / 2 ))
+            self.surface.fill((0, 0, 255))
         elif pitch <= 0.66:
-            self.surface = pygame.Surface((160, 50))
+            self.surface = pygame.Surface((160, lane_height / 2))
             self.surface.fill((0, 255, 0))
         else:
-            self.surface = pygame.Surface((240, 50))
+            self.surface = pygame.Surface((240, lane_height / 2))
             self.surface.fill((255, 0, 0))
         self.amplitude = amplitude
+        lane_index =lanes - 1 - min(int(amplitude / screen_height * lanes), lanes - 1)
         self.speed = - speed
         self.rect = self.surface.get_rect(
             center=(
                 screen_width,
-                self.amplitude,)
+                lane_centres[lane_index])
         )
          
     def update(self):
         self.rect.move_ip(self.speed, 0)
         if self.rect.right < 0:
             self.kill()
+        if self.speed == 0: self.kill()
             
 command = queue()
 async def controller_server(websocket,):
@@ -117,14 +130,13 @@ def game(music_data):
         for entity in all_sprites:
             screen.blit(entity.surface,entity.rect)
         if pygame.sprite.spritecollideany(player, enemies):
-            player.kill()
+            ##player.kill()
             ##running = False
             pass
         pygame.display.flip()
         try:
             md = music_data.get_nowait()
             speed = (float(md['bpm'])/9)
-            if speed < 1: speed = 1
             new_enemy = Enemy(speed,float(md['amplitude']),float(md['pitch']))
             enemies.add(new_enemy)
             all_sprites.add(new_enemy)
@@ -144,8 +156,9 @@ def get_music_data(music_data):
     BASS_LOW,BASS_HIGH = 20,150
     PITCH_LOW,PITCH_HIGH = 150,1500
     WINDOW_SEC = 5
-    bass_history = deque(maxlen=22)
+    bass_history = deque(maxlen=50)
     bass_history.extend([0] * 22)
+    amplitude_history = deque(maxlen=22)
     threshold_multiplier = 1.1
     bpm = 0
     beat_times = deque()
@@ -165,8 +178,15 @@ def get_music_data(music_data):
         raise RuntimeError("VB Cable not found. Make sure it's installed and enabled.")
     
     def get_amplitude(mono):
-        amplitude = (np.sqrt(np.mean(mono ** 2))) * 100
-        mapped_value = np.interp(amplitude, [-10, 50], [10, 590])
+        nonlocal amplitude_history
+        amplitude = (np.sqrt(np.mean(mono ** 2))) 
+        amplitude_history.append(amplitude)
+        min_amplitude = min(amplitude_history)
+        max_amplitude = max(amplitude_history)
+        if max_amplitude - min_amplitude < 1e-5:
+            mapped_value = 0
+        else:
+            mapped_value = np.interp(amplitude, [min_amplitude, max_amplitude], [0, 600])
         return f"{mapped_value:.0f}"
     
     def get_bass_amp(spectrum,freqs):
