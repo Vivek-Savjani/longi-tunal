@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Controller</title>
+    <style>
+        body { 
+        font-family: Roboto, Arial; 
+        padding: 20px; }
+        
+        .row {
+         display:flex; 
+         gap:8px; 
+         margin:8px 0; 
+         }
+        button { 
+            padding:12px 18px; 
+            font-size:16px; 
+            cursor:pointer; 
+        }
+        select { 
+            padding:8px; 
+            font-size:16px;
+         }
+        #status { 
+            margin-left:12px; 
+            font-weight:600; }
+    </style>
+</head>
+<body>
+    <h3>Controller</h3>
+
+    <div class="row">
+        <label for="player">Player:</label>
+        <select id="player">
+            <option value="1">Player 1</option>
+            <option value="2">Player 2</option>
+        </select>
+        <span id="status">Connecting...</span>
+    </div>
+
+    <div class="row">
+        <button data-cmd="up" id="btn-up">Up</button>
+        <button data-cmd="down" id="btn-down">Down</button>
+    </div>
+
+    <script>
+        const statusEl = document.getElementById('status');
+        const playerSelect = document.getElementById('player');
+        const buttons = Array.from(document.querySelectorAll('button[data-cmd]'));
+
+        let ws;
+        const url = 'ws://localhost:8765';
+
+        function setButtonsDisabled(v){
+            buttons.forEach(b => b.disabled = v);
+        }
+
+        function connect(){
+            ws = new WebSocket(url);
+
+            ws.addEventListener('open', () => {
+                statusEl.textContent = 'Connected';
+                statusEl.style.color = 'green';
+                setButtonsDisabled(false);
+            });
+
+            ws.addEventListener('close', () => {
+                statusEl.textContent = 'Disconnected - reconnecting...';
+                statusEl.style.color = 'darkorange';
+                setButtonsDisabled(true);
+                setTimeout(connect, 1000);
+            });
+
+            ws.addEventListener('error', () => {
+                statusEl.textContent = 'Error';
+                statusEl.style.color = 'red';
+            });
+
+            ws.addEventListener('message', ev => {
+                // optional: handle server messages if needed
+                console.log('recv:', ev.data);
+            });
+        }
+
+        function sendCommand(cmd){
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                console.warn('WebSocket not open, dropping command:', cmd);
+                return;
+            }
+            const payload = {
+                player: parseInt(playerSelect.value, 10),
+                command: cmd
+            };
+            ws.send(JSON.stringify(payload));
+        }
+
+        // wire buttons
+        buttons.forEach(btn => {
+            btn.addEventListener('click', () => sendCommand(btn.dataset.cmd));
+        });
+
+        // keyboard support (optional): arrow keys map to commands
+        window.addEventListener('keydown', e => {
+            const map = { ArrowUp: 'up', ArrowDown: 'down' };
+            if (map[e.key]) {
+                e.preventDefault();
+                sendCommand(map[e.key]);
+            }
+        });
+
+        // initial state
+        setButtonsDisabled(true);
+        connect();
+    </script>
+</body>
+</html>
