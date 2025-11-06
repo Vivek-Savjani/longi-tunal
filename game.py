@@ -1,6 +1,6 @@
-import pygame,random,threading,asyncio,websockets,json
+import pygame,threading,asyncio,websockets,json
 from multiprocessing import Process, Queue
-from queue import Empty
+from queue import Queue as queue, Empty
 from pygame.locals import (
     K_UP,
     K_DOWN,
@@ -15,7 +15,7 @@ class Player(pygame.sprite.Sprite):
     def __init__(self):
         super(Player, self).__init__()
         self.surface = pygame.Surface((50, 50))
-        self.surface.fill((255, 0, 0))
+        self.surface.fill((255, 0, 255))
         self.rect = self.surface.get_rect()
     def update(self,commands, pressed_keys):
         try:
@@ -57,13 +57,13 @@ class Enemy(pygame.sprite.Sprite):
     def __init__(self,speed,amplitude,pitch):
         super(Enemy, self).__init__()
         if pitch <= 0.33:
-            self.surface = pygame.Surface((20, 20))
-            self.surface.fill((0, 255, 0))
+            self.surface = pygame.Surface((80,50))
+            self.surface.fill((0, 255, 255))
         elif pitch <= 0.66:
-            self.surface = pygame.Surface((25, 25))
+            self.surface = pygame.Surface((160, 50))
             self.surface.fill((0, 255, 0))
         else:
-            self.surface = pygame.Surface((30, 30))
+            self.surface = pygame.Surface((240, 50))
             self.surface.fill((255, 0, 0))
         self.amplitude = amplitude
         self.speed = - speed
@@ -78,7 +78,7 @@ class Enemy(pygame.sprite.Sprite):
         if self.rect.right < 0:
             self.kill()
             
-command = Queue()
+command = queue()
 async def controller_server(websocket,):
     global command
     async for message in websocket:
@@ -101,7 +101,7 @@ def game(music_data):
     player = Player()
     enemies = pygame.sprite.Group()
     all_sprites = pygame.sprite.Group()
-    all_sprites.add(player,enemies)
+    all_sprites.add(player)
     running = True
     global command     
 
@@ -113,6 +113,7 @@ def game(music_data):
         player.update(command,pygame.key.get_pressed())
         enemies.update()
         screen.fill((255, 255, 255))
+
         for entity in all_sprites:
             screen.blit(entity.surface,entity.rect)
         if pygame.sprite.spritecollideany(player, enemies):
@@ -122,7 +123,8 @@ def game(music_data):
         pygame.display.flip()
         try:
             md = music_data.get_nowait()
-            speed = (float(md['bpm'])/30) + 1
+            speed = (float(md['bpm'])/9)
+            if speed < 1: speed = 1
             new_enemy = Enemy(speed,float(md['amplitude']),float(md['pitch']))
             enemies.add(new_enemy)
             all_sprites.add(new_enemy)
@@ -140,11 +142,13 @@ def get_music_data(music_data):
     from collections import deque
     import time
     BASS_LOW,BASS_HIGH = 20,150
-    PITCH_LOW,PITCH_HIGH = 150,2000
+    PITCH_LOW,PITCH_HIGH = 150,1500
     WINDOW_SEC = 5
-    THRESHOLD_MULT = 1.5 
+    bass_history = deque(maxlen=22)
+    bass_history.extend([0] * 22)
+    threshold_multiplier = 1.1
+    bpm = 0
     beat_times = deque()
-    prev_bass_amp = 0 
     SR = 44100
     BLOCK_SIZE = 1024  # Number of frames per read
 
@@ -159,24 +163,17 @@ def get_music_data(music_data):
 
     if device_index is None:
         raise RuntimeError("VB Cable not found. Make sure it's installed and enabled.")
-
-    def get_amplitude(indata):
-        mono = np.mean(indata, axis=1)
+    
+    def get_amplitude(mono):
         amplitude = (np.sqrt(np.mean(mono ** 2))) * 100
         mapped_value = np.interp(amplitude, [-10, 50], [10, 590])
         return f"{mapped_value:.0f}"
     
-    def get_bass_amp(indata):
-        mono = np.mean(indata, axis=1)
-        spectrum = np.fft.rfft(mono)
-        freqs = np.fft.rfftfreq(len(mono), 1/SR)
+    def get_bass_amp(spectrum,freqs):
         bass_range = (freqs >= BASS_LOW) & (freqs <= BASS_HIGH)
         return np.mean(np.abs(spectrum[bass_range]))
 
-    def get_pitch(indata):
-        mono = np.mean(indata, axis=1)
-        spectrum = np.fft.rfft(mono)
-        freqs = np.fft.rfftfreq(len(mono), 1/SR)
+    def get_pitch(spectrum,freqs):
         pitch_range = (freqs >= PITCH_LOW) & (freqs <= PITCH_HIGH)
         if np.any(pitch_range):
             pitch_freq = freqs[pitch_range][np.argmax(np.abs(spectrum[pitch_range]))]
@@ -188,20 +185,23 @@ def get_music_data(music_data):
     with sd.InputStream(channels=2, samplerate=SR, blocksize=BLOCK_SIZE, device=device_index) as stream:
         while True:
             indata, _ = stream.read(BLOCK_SIZE)
-            bass_amp = get_bass_amp(indata)
+            mono = np.mean(indata, axis=1)
+            spectrum = np.fft.rfft(mono)
+            freqs = np.fft.rfftfreq(len(mono), 1/SR)
+            bass_amp = get_bass_amp(spectrum,freqs)
+    
+            now = time.time()   
+            threshold = np.mean(bass_history) *threshold_multiplier
+            if bass_amp > threshold and bass_amp > 0.2:
+                if len(beat_times) == 0 or now - beat_times[-1] > 0.2:  # avoid double-counting
+                    beat_times.append(now)      
+                    amplitude = get_amplitude(mono)
+                    pitch = get_pitch(spectrum,freqs)
+                    music_data.put({'amplitude': amplitude, 'bpm': bpm,'pitch' : pitch})
             if len(beat_times) > 1:
                 intervals = np.diff(beat_times)
                 bpm = 60 / np.mean(intervals)
-            else:
-                bpm = 0
-            now = time.time()
-            if bass_amp > prev_bass_amp * THRESHOLD_MULT and bass_amp > 0.2:
-                amplitude = get_amplitude(indata)
-                pitch = get_pitch(indata)
-                if len(beat_times) == 0 or now - beat_times[-1] > 0.2:  # avoid double-counting
-                    beat_times.append(now)
-                    music_data.put({'amplitude': amplitude, 'bpm': bpm,'pitch' : pitch})
-            prev_bass_amp = bass_amp
+            bass_history.append(bass_amp)
             while beat_times and now - beat_times[0] > WINDOW_SEC:
                 beat_times.popleft()
 
