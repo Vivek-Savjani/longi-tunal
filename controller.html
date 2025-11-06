@@ -10,7 +10,7 @@
         
         .row {
          display:flex; 
-         ap:8px; 
+         gap:8px; 
          margin:8px 0; 
          }
         button { 
@@ -41,9 +41,7 @@
 
     <div class="row">
         <button data-cmd="up" id="btn-up">Up</button>
-        <button data-cmd="left" id="btn-left">Left</button>
         <button data-cmd="down" id="btn-down">Down</button>
-        <button data-cmd="right" id="btn-right">Right</button>
     </div>
 
     <script>
@@ -104,7 +102,7 @@
 
         // keyboard support (optional): arrow keys map to commands
         window.addEventListener('keydown', e => {
-            const map = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
+            const map = { ArrowUp: 'up', ArrowDown: 'down' };
             if (map[e.key]) {
                 e.preventDefault();
                 sendCommand(map[e.key]);
