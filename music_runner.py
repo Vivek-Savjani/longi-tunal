@@ -110,6 +110,10 @@ class MusicRunner:
         self.base_speed = 1.0
         self.current_speed = self.base_speed
         
+        # Score calculation
+        self.current_bpm = self.level_data.get('bpm', 100)  # Get BPM from level data
+        self.frame_count = 0
+        
         # Sprite groups
         self.all_sprites = pygame.sprite.Group()
         self.obstacles = pygame.sprite.Group()
@@ -196,17 +200,27 @@ class MusicRunner:
     
     def draw_ui(self):
         """Draw score and other UI elements"""
-        # Score
+        # Score with formula display
         score_text = self.font.render(f"Score: {self.score}", True, BLACK)
         self.screen.blit(score_text, (10, 10))
         
+        # Score formula
+        actual_fps = self.clock.get_fps()
+        formula_font = pygame.font.Font(None, 24)
+        formula_text = formula_font.render(f"({self.current_bpm:.0f} BPM / {actual_fps:.1f} FPS) x 1000", True, (100, 100, 100))
+        self.screen.blit(formula_text, (10, 45))
+        
         # Time
         time_text = self.font.render(f"Time: {self.game_time:.1f}s", True, BLACK)
-        self.screen.blit(time_text, (10, 50))
+        self.screen.blit(time_text, (10, 80))
         
         # Speed
         speed_text = self.font.render(f"Speed: {self.current_speed:.2f}x", True, BLACK)
         self.screen.blit(speed_text, (SCREEN_WIDTH - 200, 10))
+        
+        # BPM indicator
+        bpm_text = self.font.render(f"BPM: {self.current_bpm:.0f}", True, BLACK)
+        self.screen.blit(bpm_text, (SCREEN_WIDTH - 200, 50))
         
         # Draw lane dividers
         for i in range(1, LANES):
@@ -219,6 +233,12 @@ class MusicRunner:
             # Delta time
             dt = self.clock.tick(FPS) / 1000.0
             self.game_time += dt
+            self.frame_count += 1
+            
+            # Calculate score: BPM / Frame Rate
+            actual_fps = self.clock.get_fps()
+            if actual_fps > 0:
+                self.score = int((self.current_bpm / actual_fps) * 1000)  # Multiply by 1000 for better readability
             
             # Handle events
             self.handle_events()
