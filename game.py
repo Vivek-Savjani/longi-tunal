@@ -54,10 +54,17 @@ class Player(pygame.sprite.Sprite):
             case _ if self.rect.bottom > screen_height:
                 self.rect.bottom = 600
 class Enemy(pygame.sprite.Sprite):
-    def __init__(self,speed,amplitude):
+    def __init__(self,speed,amplitude,pitch):
         super(Enemy, self).__init__()
-        self.surface = pygame.Surface((30, 30))
-        self.surface.fill((0, 0, 255))
+        if pitch <= 0.33:
+            self.surface = pygame.Surface((20, 20))
+            self.surface.fill((0, 255, 0))
+        elif pitch <= 0.66:
+            self.surface = pygame.Surface((25, 25))
+            self.surface.fill((0, 255, 0))
+        else:
+            self.surface = pygame.Surface((30, 30))
+            self.surface.fill((255, 0, 0))
         self.amplitude = amplitude
         self.speed = - speed
         self.rect = self.surface.get_rect(
@@ -106,7 +113,6 @@ def game(music_data):
         player.update(command,pygame.key.get_pressed())
         enemies.update()
         screen.fill((255, 255, 255))
-        pygame.draw.circle(screen, (0, 0, 0), (750, 300), 15)
         for entity in all_sprites:
             screen.blit(entity.surface,entity.rect)
         if pygame.sprite.spritecollideany(player, enemies):
@@ -117,7 +123,7 @@ def game(music_data):
         try:
             md = music_data.get_nowait()
             speed = (float(md['bpm'])/30) + 1
-            new_enemy = Enemy(speed,float(md['amplitude']))
+            new_enemy = Enemy(speed,float(md['amplitude']),float(md['pitch']))
             enemies.add(new_enemy)
             all_sprites.add(new_enemy)
         except Empty:
@@ -174,9 +180,11 @@ def get_music_data(music_data):
         pitch_range = (freqs >= PITCH_LOW) & (freqs <= PITCH_HIGH)
         if np.any(pitch_range):
             pitch_freq = freqs[pitch_range][np.argmax(np.abs(spectrum[pitch_range]))]
+            scale = (pitch_freq - PITCH_LOW) / (PITCH_HIGH - PITCH_LOW)
+            pitch = np.clip(scale, 0.0, 1.0)
         else:
-            pitch_freq = 0
-        return f"{pitch_freq:.0f}"
+            pitch = 0
+        return pitch
     with sd.InputStream(channels=2, samplerate=SR, blocksize=BLOCK_SIZE, device=device_index) as stream:
         while True:
             indata, _ = stream.read(BLOCK_SIZE)
