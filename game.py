@@ -4,8 +4,6 @@ from queue import Queue as queue, Empty
 from pygame.locals import (
     K_UP,
     K_DOWN,
-    K_LEFT,
-    K_RIGHT,
     K_ESCAPE,
     KEYDOWN,
     QUIT,
@@ -31,15 +29,12 @@ class Player(pygame.sprite.Sprite):
             movement = request["command"]
             print("Got from queue:", repr(request), type(request))
             print(movement)
-            match  movement:
-                case "up":
-                    self.rect.move_ip(0, -8)
-                case "down":
-                    self.rect.move_ip(0, 8)
-                case "left":
-                    self.rect.move_ip(-8, 0)
-                case "right":
-                    self.rect.move_ip(8, 0)
+            if movement == "up" and self.current_lane > 0:
+                self.current_lane -= 1
+                self.key_pressed = True
+            elif movement == "down" and self.current_lane < lanes - 1:
+                self.current_lane += 1
+                self.key_pressed = True
         except Exception:
             pass
         if self.key_pressed == False: 
@@ -51,8 +46,6 @@ class Player(pygame.sprite.Sprite):
                     self.key_pressed = True
         if not (pressed_keys[K_UP] or pressed_keys[K_DOWN]):
             self.key_pressed = False
-        
-
         match self.rect:
             case _ if self.rect.left < 0:
                     self.rect.left = 0
