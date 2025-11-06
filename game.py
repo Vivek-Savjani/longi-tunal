@@ -54,16 +54,18 @@ class Player(pygame.sprite.Sprite):
             case _ if self.rect.bottom > screen_height:
                 self.rect.bottom = 600
 class Enemy(pygame.sprite.Sprite):
-    def __init__(self,speed):
+    def __init__(self,speed,amplitude):
         super(Enemy, self).__init__()
         self.surface = pygame.Surface((30, 30))
         self.surface.fill((0, 0, 255))
+        self.amplitude = amplitude
+        self.speed = - speed
         self.rect = self.surface.get_rect(
             center=(
                 screen_width,
-                random.randint(0, screen_height),)
+                self.amplitude,)
         )
-        self.speed = - speed     
+         
     def update(self):
         self.rect.move_ip(self.speed, 0)
         if self.rect.right < 0:
@@ -108,18 +110,16 @@ def game(music_data):
         for entity in all_sprites:
             screen.blit(entity.surface,entity.rect)
         if pygame.sprite.spritecollideany(player, enemies):
-            ##player.kill()
+            player.kill()
             ##running = False
             pass
         pygame.display.flip()
         try:
             md = music_data.get_nowait()
-            if random.randint(0, 100) < int(float(md['amplitude'])):
-                speed = (float(md['bpm'])/25) + 1
-                ##print("Spawning enemy with speed:", speed)
-                new_enemy = Enemy(speed)
-                enemies.add(new_enemy)
-                all_sprites.add(new_enemy)
+            speed = (float(md['bpm'])/30) + 1
+            new_enemy = Enemy(speed,float(md['amplitude']))
+            enemies.add(new_enemy)
+            all_sprites.add(new_enemy)
         except Empty:
             ##print("Empty Queue")
             pass
@@ -133,8 +133,8 @@ def get_music_data(music_data):
     import numpy as np
     from collections import deque
     import time
-    BASS_LOW = 20
-    BASS_HIGH = 150
+    BASS_LOW,BASS_HIGH = 20,150
+    PITCH_LOW,PITCH_HIGH = 150,2000
     WINDOW_SEC = 5
     THRESHOLD_MULT = 1.5 
     beat_times = deque()
@@ -156,43 +156,49 @@ def get_music_data(music_data):
 
     def get_amplitude(indata):
         mono = np.mean(indata, axis=1)
-        amplitude = np.sqrt(np.mean(mono ** 2)) * 100
-        return f"{amplitude:.2f}"
-
-    def get_current_bpm(indata):
-        nonlocal prev_bass_amp, beat_times
+        amplitude = (np.sqrt(np.mean(mono ** 2))) * 100
+        mapped_value = np.interp(amplitude, [-10, 50], [10, 590])
+        return f"{mapped_value:.0f}"
+    
+    def get_bass_amp(indata):
         mono = np.mean(indata, axis=1)
-
         spectrum = np.fft.rfft(mono)
         freqs = np.fft.rfftfreq(len(mono), 1/SR)
         bass_range = (freqs >= BASS_LOW) & (freqs <= BASS_HIGH)
-        bass_amp = np.mean(np.abs(spectrum[bass_range]))
+        return np.mean(np.abs(spectrum[bass_range]))
 
-        now = time.time()
-
-        if bass_amp > prev_bass_amp * THRESHOLD_MULT and bass_amp > 0.2:
-            if len(beat_times) == 0 or now - beat_times[-1] > 0.2:  # avoid double-counting
-                beat_times.append(now)
-
-        prev_bass_amp = bass_amp
-
-        while beat_times and now - beat_times[0] > WINDOW_SEC:
-            beat_times.popleft()
-
-        if len(beat_times) > 1:
-            intervals = np.diff(beat_times)
-            bpm = 60 / np.mean(intervals)
+    def get_pitch(indata):
+        mono = np.mean(indata, axis=1)
+        spectrum = np.fft.rfft(mono)
+        freqs = np.fft.rfftfreq(len(mono), 1/SR)
+        pitch_range = (freqs >= PITCH_LOW) & (freqs <= PITCH_HIGH)
+        if np.any(pitch_range):
+            pitch_freq = freqs[pitch_range][np.argmax(np.abs(spectrum[pitch_range]))]
         else:
-            bpm = 0
-
-        return f"{bpm:.0f}"
-
+            pitch_freq = 0
+        return f"{pitch_freq:.0f}"
     with sd.InputStream(channels=2, samplerate=SR, blocksize=BLOCK_SIZE, device=device_index) as stream:
         while True:
             indata, _ = stream.read(BLOCK_SIZE)
-            amplitude = get_amplitude(indata)
-            bpm = get_current_bpm(indata)
-            music_data.put({'amplitude': amplitude, 'bpm': bpm})
+            bass_amp = get_bass_amp(indata)
+            if len(beat_times) > 1:
+                intervals = np.diff(beat_times)
+                bpm = 60 / np.mean(intervals)
+            else:
+                bpm = 0
+            now = time.time()
+            if bass_amp > prev_bass_amp * THRESHOLD_MULT and bass_amp > 0.2:
+                amplitude = get_amplitude(indata)
+                pitch = get_pitch(indata)
+                if len(beat_times) == 0 or now - beat_times[-1] > 0.2:  # avoid double-counting
+                    beat_times.append(now)
+                    music_data.put({'amplitude': amplitude, 'bpm': bpm,'pitch' : pitch})
+            prev_bass_amp = bass_amp
+            while beat_times and now - beat_times[0] > WINDOW_SEC:
+                beat_times.popleft()
+
+    
+                
 
 if __name__ == "__main__":
     music_data = Queue()
