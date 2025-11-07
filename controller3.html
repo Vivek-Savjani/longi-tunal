@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neo Console Controller</title>
+<style>
+    /* ======= GLOBAL ======= */
+    body {
+        font-family: 'Inter', 'Segoe UI', Roboto, sans-serif;
+        background: radial-gradient(circle at 30% 30%, #1a1f35 0%, #0a0d18 100%);
+        color: #e8e8e8;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        margin: 0;
+        padding: 20px;
+        background-image: 
+            radial-gradient(rgba(255,255,255,0.05) 1px, transparent 1px),
+            radial-gradient(rgba(255,255,255,0.05) 1px, transparent 1px);
+        background-size: 40px 40px;
+        background-position: 0 0, 20px 20px;
+    }
+
+    /* ======= CONTROLLER BOX ======= */
+    .controller-box {
+        background: rgba(50, 55, 80, 0.9);
+        backdrop-filter: blur(8px);
+        border-radius: 22px;
+        padding: 36px;
+        box-shadow: 
+            0 10px 25px rgba(0,0,0,0.5),
+            0 0 25px rgba(0,200,255,0.2),
+            inset 0 0 0 1px rgba(255,255,255,0.2);
+        width: 95%;
+        max-width: 380px;
+        display: flex;
+        flex-direction: column;
+        gap: 26px;
+        transition: transform 0.3s ease;
+    }
+
+    .controller-box:hover {
+        transform: translateY(-6px);
+    }
+
+    h3 {
+        color: #00d4ff;
+        text-shadow: 0 0 10px rgba(0,212,255,0.7);
+        margin: 0;
+        text-align: center;
+        border-bottom: 1px solid rgba(255,255,255,0.15);
+        padding-bottom: 14px;
+        letter-spacing: 0.5px;
+    }
+
+    /* ======= SETTINGS BAR ======= */
+    .settings-bar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    label {
+        color: #ccc;
+        font-weight: 500;
+    }
+
+    select {
+        padding: 10px 16px;
+        border-radius: 10px;
+        font-size: 15px;
+        background: #1b1e2b;
+        color: #e8e8e8;
+        border: 1px solid rgba(255,255,255,0.2);
+        transition: all 0.2s;
+        cursor: pointer;
+    }
+
+    select:hover {
+        border-color: #00eaff;
+        box-shadow: 0 0 10px rgba(0,234,255,0.4);
+    }
+
+    /* ======= STATUS PILL ======= */
+    #status {
+        font-weight: 600;
+        padding: 6px 14px;
+        border-radius: 16px;
+        font-size: 0.9em;
+        text-transform: uppercase;
+        text-align: center;
+        min-width: 110px;
+        transition: all 0.3s;
+    }
+
+    /* ======= D-PAD ======= */
+    .dpad-container {
+        display: grid;
+        grid-template-areas:
+            ". up ."
+            "left center right"
+            ". down .";
+        gap: 10px;
+        width: 180px;
+        height: 180px;
+        margin: 0 auto;
+    }
+
+    .dpad-button {
+        background: linear-gradient(180deg, #23263a 0%, #171926 100%);
+        color: #f0f0f0;
+        border: 1px solid rgba(255,255,255,0.15);
+        border-radius: 12px;
+        font-size: 1.4em;
+        font-weight: bold;
+        cursor: pointer;
+        transition: all 0.15s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.4),
+                    inset 0 -3px 0 rgba(0,0,0,0.3);
+    }
+
+    .dpad-button:hover:not(:disabled) {
+        background: linear-gradient(180deg, #00eaff 0%, #007bff 100%);
+        color: #0b0f1a;
+        box-shadow: 0 0 15px rgba(0,234,255,0.8);
+    }
+
+    .dpad-button:active:not(:disabled) {
+        transform: translateY(3px);
+        box-shadow: inset 0 2px 6px rgba(0,0,0,0.6);
+    }
+
+    .dpad-button:disabled {
+        background: rgba(255,255,255,0.05);
+        color: #666;
+        cursor: not-allowed;
+    }
+
+    #btn-up { grid-area: up; }
+    #btn-down { grid-area: down; }
+    .placeholder { display: none; }
+</style>
+</head>
+<body>
+    <div class="controller-box">
+        <h3>🎮 Neo Console Controller</h3>
+
+        <div class="settings-bar">
+            <div>
+                <label for="player">Player:</label>
+                <select id="player">
+                    <option value="1">Player 1</option>
+                    <option value="2">Player 2</option>
+                </select>
+            </div>
+            <span id="status">Connecting...</span>
+        </div>
+
+        <div class="dpad-container">
+            <button class="dpad-button" data-cmd="up" id="btn-up">▲</button>
+            <div class="placeholder"></div>
+            <button class="dpad-button" data-cmd="down" id="btn-down">▼</button>
+        </div>
+    </div>
+
+    <script>
+        const statusEl = document.getElementById('status');
+        const playerSelect = document.getElementById('player');
+        const buttons = [...document.querySelectorAll('.dpad-button[data-cmd]')];
+        let ws;
+        const url = 'ws://localhost:8765';
+
+        function setButtonsDisabled(v){ buttons.forEach(b => b.disabled = v); }
+
+        function updateStatus(text, state) {
+            statusEl.textContent = text;
+            if (state === 'connected') {
+                statusEl.style.background = 'linear-gradient(90deg,#00ffcc,#00b3ff)';
+                statusEl.style.color = '#0b0f1a';
+                statusEl.style.boxShadow = '0 0 15px rgba(0,255,255,0.6)';
+            } else if (state === 'connecting') {
+                statusEl.style.background = 'linear-gradient(90deg,#f1c40f,#e67e22)';
+                statusEl.style.color = '#1e1e1e';
+                statusEl.style.boxShadow = '0 0 12px rgba(241,196,15,0.5)';
+            } else {
+                statusEl.style.background = 'linear-gradient(90deg,#e74c3c,#c0392b)';
+                statusEl.style.color = '#fff';
+                statusEl.style.boxShadow = '0 0 12px rgba(231,76,60,0.6)';
+            }
+        }
+
+        function connect(){
+            ws = new WebSocket(url);
+            updateStatus('Connecting...', 'connecting');
+            setButtonsDisabled(true);
+
+            ws.addEventListener('open', () => {
+                updateStatus('Connected', 'connected');
+                setButtonsDisabled(false);
+            });
+
+            ws.addEventListener('close', () => {
+                updateStatus('Disconnected - reconnecting...', 'disconnected');
+                setButtonsDisabled(true);
+                setTimeout(connect, 1000);
+            });
+
+            ws.addEventListener('error', () => {
+                updateStatus('Error', 'error');
+            });
+        }
+
+        function sendCommand(cmd){
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            const payload = { player: parseInt(playerSelect.value, 10), command: cmd };
+            ws.send(JSON.stringify(payload));
+        }
+
+        buttons.forEach(btn => btn.addEventListener('click', () => sendCommand(btn.dataset.cmd)));
+        window.addEventListener('keydown', e => {
+            const map = { ArrowUp: 'up', ArrowDown: 'down' };
+            if (map[e.key]) { e.preventDefault(); sendCommand(map[e.key]); }
+        });
+
+        connect();
+    </script>
+</body>
+</html>
+
