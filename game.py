@@ -1,4 +1,11 @@
-﻿import pygame,random,threading,asyncio,websockets,json
+import socket      
+HOST = "0.0.0.0"   # listen on all network interfaces
+PORT = 5000        # you can choose any free port
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.bind((HOST, PORT))
+s.listen()
+print(f"Listening on {HOST}:{PORT}")
+import pygame,random,threading,asyncio,websockets,json
 from multiprocessing import Process, Queue
 from queue import Empty
 from pygame.locals import (
