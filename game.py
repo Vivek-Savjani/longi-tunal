@@ -95,17 +95,21 @@ class background:
         self.theme = theme
         self.screen_width, self.screen_height = screen.get_size()
         self.center_x, self.center_y = self.screen_width // 2, self.screen_width // 2
-        self.beat_flash_timer = 0
+        self.beat_flash_intensity = 0.0
     def on_beat(self):
-        self.beat_flash_timer = 5
+        self.beat_flash_intensity = 1.0
     def update(self):
-        if self.beat_flash_timer > 0:
-            self.beat_flash_timer -= 1
+        self.beat_flash_intensity *= 0.01 # decay factor per frame
+        if self.beat_flash_intensity < 0.01:
+            self.beat_flash_intensity = 0.0
     def draw(self):
-        if self.beat_flash_timer > 0:
-            self.screen.fill(self.theme["bg_flash"])
-        else:
-            self.screen.fill(self.theme["bg"])
+        self.screen.fill(self.theme["bg"])  
+        if self.beat_flash_intensity > 0:
+            # Overlay the flash with alpha based on intensity
+            flash_surf = pygame.Surface(self.screen.get_size(), pygame.SRCALPHA)
+            alpha = int(self.beat_flash_intensity * 255)
+            flash_surf.fill((*self.theme["bg_flash"], alpha))
+            self.screen.blit(flash_surf, (0, 0))
 class synthwave_bg(background):
     def __init__(self,screen,theme):
         super().__init__(screen,theme)
@@ -127,7 +131,7 @@ class synthwave_bg(background):
         
     def on_beat(self):
         super().on_beat()
-        self.beat_pulse = 30
+        self.beat_pulse = 10
     
     def update(self):
         super().update()
@@ -216,32 +220,33 @@ class synthwave_bg(background):
 class ice_bg(background):
     def __init__(self, screen, theme):
         super().__init__(screen, theme)
-        
+
         self.beat_pulse = 0
         self.particle_count = 100
         self.particles = []
+        self.screen_center = (self.screen_width // 2, self.screen_height // 2)
         
         for i in range(self.particle_count):
             self.particles.append({
                 "x": random.randint(0, self.screen_width),
                 "y": random.randint(0, self.screen_height),
-                "speed": random.uniform(1, 3)
+                "speed": random.uniform(1, 3),
+                "glow_radius": random.randint(10, 30)
             })
-        
+
     def on_beat(self):
         super().on_beat()
-        
-        # Trigger the particle pulse
-        self.beat_pulse = 1.5 
-        
+        # Trigger the pulse
+        self.beat_pulse = 1.5
+
     def update(self):
         super().update()
-            
-        # Decay for the snow particle pulse
-        self.beat_pulse *= 0.90 # Fades over time
+        
+        # Decay the pulse over time
+        self.beat_pulse *= 0.90
         if self.beat_pulse < 0.1:
             self.beat_pulse = 0
-        
+
         # Update particles
         for p in self.particles:
             p['y'] += p['speed'] + self.beat_pulse
@@ -249,14 +254,73 @@ class ice_bg(background):
             if p['y'] > self.screen_height:
                 p['y'] = 0
                 p['x'] = random.randint(0, self.screen_width)
+            
+
+    def _draw_stylized_snowflake(self, surface, center, length, color, main_width, side_width, foot_length_ratio=0.2, foot_angle_offset_degrees=30):
+        cx, cy = center
+        side_len = length * 0.3
+        angle_offset = math.radians(20)
+        
+        foot_length = length * foot_length_ratio
+        foot_angle_offset_rad = math.radians(foot_angle_offset_degrees)
+
+        for i in range(6):
+            angle = math.radians(i * 60)
+            
+            x_end = cx + math.cos(angle) * length
+            y_end = cy + math.sin(angle) * length
+            pygame.draw.line(surface, color, (cx, cy), (x_end, y_end), main_width)
+            
+            foot1_x = x_end + math.cos(angle - foot_angle_offset_rad) * foot_length
+            foot1_y = y_end + math.sin(angle - foot_angle_offset_rad) * foot_length
+            pygame.draw.line(surface, color, (x_end, y_end), (foot1_x, foot1_y), side_width)
+
+            foot2_x = x_end + math.cos(angle + foot_angle_offset_rad) * foot_length
+            foot2_y = y_end + math.sin(angle + foot_angle_offset_rad) * foot_length
+            pygame.draw.line(surface, color, (x_end, y_end), (foot2_x, foot2_y), side_width)
+            
+            x1 = cx + math.cos(angle - angle_offset) * side_len
+            y1 = cy + math.sin(angle - angle_offset) * side_len
+            pygame.draw.line(surface, color, (cx, cy), (x1, y1), side_width)
+            
+            x2 = cx + math.cos(angle + angle_offset) * side_len
+            y2 = cy + math.sin(angle + angle_offset) * side_len
+            pygame.draw.line(surface, color, (cx, cy), (x2, y2), side_width)
+
+    def draw_glow(self, pos, base_radius):
+        for i in range(5, 0, -1):
+            alpha = int(25 * i)
+            length = int(base_radius * (i / 5))
+            
+            glow_surf = pygame.Surface((length * 2, length * 2), pygame.SRCALPHA)
+            
+            glow_color = (*self.theme['lane_divider'], alpha)
+            main_width = max(2, i)
+            side_width = max(1, i - 1)
+            
+            self._draw_stylized_snowflake(glow_surf, (length, length), length, glow_color, main_width, side_width)
+            
+            self.screen.blit(glow_surf, (pos[0] - length, pos[1] - length))
 
     def draw(self):
-        # 1. Draw base background
         super().draw()
         
-        # 2. Draw Particles
-        for p in self.particles:
+        if not hasattr(self, 'smoothed_pulse'):
+            self.smoothed_pulse = 0.0
+        
+        smoothing_factor = 0.15 # You can tune this (0.1 is slower, 0.5 is faster)
+        self.smoothed_pulse += (self.beat_pulse - self.smoothed_pulse) * smoothing_factor
+        
+        for p in self.particles: 
             pygame.draw.circle(self.screen, self.theme['lane_divider'], (p['x'], p['y']), 2)
+        
+        center_glow_radius = 60 + self.smoothed_pulse * 80
+        self.draw_glow(self.screen_center, center_glow_radius)
+        
+        color = self.theme['lane_divider']
+        length = 70 + self.smoothed_pulse * 50
+
+        self._draw_stylized_snowflake(self.screen, self.screen_center, length, color, 3, 2)
 themes = {
     "synthwave": {
         "player": (255, 50, 200),
@@ -438,6 +502,7 @@ def game(music_data,screen,font_large,font_small):
             score += float(md["bpm"]/240) 
             game_speed = float(md['bpm']) / np.interp(score, [0, 100], [27, 9])
             speed = (game_speed)
+            background.on_beat()
             for enemy in enemies:
                 enemy.speed = - game_speed
 
@@ -467,7 +532,6 @@ def game(music_data,screen,font_large,font_small):
             is_fading = True
             fade_alpha = 0
             last_theme_change = int(score)
-            print(f"Fading to {new_theme_name}")
       
         clock.tick(120) ## cap the frame rate to 120 FPS (useful for timing with the sound wave form in furture)
 
