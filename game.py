@@ -1,4 +1,4 @@
-import pygame,threading,asyncio,websockets,json,math
+import pygame,threading,asyncio,websockets,json,random,math,time,numpy as np
 from multiprocessing import Process, Queue
 from queue import Queue as queue, Empty
 from pygame.locals import (
@@ -109,7 +109,7 @@ class synthwave_bg(background):
         super().__init__(screen,theme)
         self.sun_y = int(self.screen_height * 0.95)
         
-        self.sun_core_r = 100
+        self.sun_core_r = 145
         self.sun_glow_r = 150
         self.sun_core_colour = self.theme["enemy_high"]
         self.sun_glow_colour = self.theme["player"] + (40,)
@@ -135,7 +135,7 @@ class synthwave_bg(background):
         self.scan_line_y = (self.scan_line_y + self.scan_line_speed)
         self.scan_line_y += self.scan_line_speed
         if self.scan_line_y >= 8:  # line spacing
-            self.scan_line_y -= 8  # wrap smoothly
+            self.scan_line_y -= 8  
         scan_surf = pygame.Surface((self.screen_width, self.screen_height), pygame.SRCALPHA)
         line_spacing = 8
         y = -line_spacing + self.scan_line_y
@@ -160,10 +160,45 @@ class synthwave_bg(background):
                                      self.sun_y - current_glow_r))
         
 
-        pygame.draw.circle(self.screen, 
-                           self.sun_core_colour, 
-                           (self.center_x, self.sun_y), 
+        sun_surf_size = current_core_r * 2
+        sun_surf = pygame.Surface((sun_surf_size, sun_surf_size), pygame.SRCALPHA)
+        color_top = pygame.Color(*self.sun_core_colour)
+        color_bottom = pygame.Color(*self.theme["player"])
+
+        solid_top_height = 80 
+        
+        base_line_spacing = 20
+        
+        for y in range(0, sun_surf_size, base_line_spacing):
+            y_ratio = y / sun_surf_size
+            current_color = color_top.lerp(color_bottom, y_ratio)
+            current_line_thickness = 0 
+            
+            if y < solid_top_height:
+                current_line_thickness = 20 
+     
+            else:
+                aggressive_y_ratio = (y - solid_top_height) / (sun_surf_size - solid_top_height)
+                
+                current_line_thickness = int(12 - (aggressive_y_ratio * 4)) 
+                current_line_thickness = max(1, current_line_thickness) 
+                
+            pygame.draw.line(sun_surf, 
+                             current_color, 
+                             (0, y),
+                             (sun_surf_size, y), 
+                             current_line_thickness) 
+
+        # Now, create a circular mask
+        mask_surf = pygame.Surface((sun_surf_size, sun_surf_size), pygame.SRCALPHA)
+        pygame.draw.circle(mask_surf, 
+                           (255, 255, 255), 
+                           (current_core_r, current_core_r),
                            current_core_r)
+        sun_surf.blit(mask_surf, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+
+        self.screen.blit(sun_surf, (self.center_x - current_core_r, 
+                                     self.sun_y - current_core_r))
         
      
         scan_surf = pygame.Surface((self.screen_width, self.screen_height), pygame.SRCALPHA)
@@ -176,6 +211,50 @@ class synthwave_bg(background):
                 2)
         self.screen.blit(scan_surf, (0, 0))
 
+class ice_bg(background):
+    def __init__(self, screen, theme):
+        super().__init__(screen, theme)
+        
+        self.beat_pulse = 0
+        self.particle_count = 100
+        self.particles = []
+        
+        for i in range(self.particle_count):
+            self.particles.append({
+                "x": random.randint(0, self.screen_width),
+                "y": random.randint(0, self.screen_height),
+                "speed": random.uniform(1, 3)
+            })
+        
+    def on_beat(self):
+        super().on_beat()
+        
+        # Trigger the particle pulse
+        self.beat_pulse = 1.5 
+        
+    def update(self):
+        super().update()
+            
+        # Decay for the snow particle pulse
+        self.beat_pulse *= 0.90 # Fades over time
+        if self.beat_pulse < 0.1:
+            self.beat_pulse = 0
+        
+        # Update particles
+        for p in self.particles:
+            p['y'] += p['speed'] + self.beat_pulse
+            p['x'] += math.sin(time.time() + p['x']) * 0.5
+            if p['y'] > self.screen_height:
+                p['y'] = 0
+                p['x'] = random.randint(0, self.screen_width)
+
+    def draw(self):
+        # 1. Draw base background
+        super().draw()
+        
+        # 2. Draw Particles
+        for p in self.particles:
+            pygame.draw.circle(self.screen, self.theme['lane_divider'], (p['x'], p['y']), 2)
 themes = {
     "synthwave": {
         "player": (255, 50, 200),
@@ -187,17 +266,18 @@ themes = {
         "lane_divider": (255, 0, 255),
         "background_class": synthwave_bg
     },
-    "ice": {
-        "player": (255, 255, 255),     
-        "enemy_low": (0, 100, 255),  
-        "enemy_mid": (0, 200, 255),   
-        "enemy_high": (150, 220, 255), 
-        "bg": (10, 10, 30),         
-        "bg_flash": (100, 100, 150),
-        "lane_divider": (255, 255, 255) 
-    }
+"ice": {
+    "player": (200, 255, 255),
+    "enemy_low": (0, 150, 255),
+    "enemy_mid": (0, 220, 255),
+    "enemy_high": (180, 255, 255),
+    "bg": (5, 15, 40),
+    "bg_flash": (100, 200, 255),
+    "lane_divider": (180, 255, 255),
+    "background_class": ice_bg
 }
-theme = themes["synthwave"]
+}
+theme = themes["ice"]
  
 command = queue()
 async def controller_server(websocket,):
