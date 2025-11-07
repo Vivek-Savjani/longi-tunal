@@ -1,351 +1,76 @@
-import pygame,threading,asyncio,websockets,json,random,math,time,numpy as np
+﻿import pygame,random,threading,asyncio,websockets,json
 from multiprocessing import Process, Queue
-from queue import Queue as queue, Empty
+from queue import Empty
 from pygame.locals import (
     K_UP,
     K_DOWN,
+    K_LEFT,
+    K_RIGHT,
     K_ESCAPE,
+    K_SPACE,
     KEYDOWN,
     QUIT,
 )
 screen_width, screen_height = 800, 600
-lanes = 3
-lane_height = screen_height / lanes
-lane_centres = [int((i * lane_height) + (lane_height / 2)) for i in range(lanes)]
-
-score = 0
 class Player(pygame.sprite.Sprite):
     def __init__(self):
         super(Player, self).__init__()
-        self.surface = pygame.Surface((50, 50), pygame.SRCALPHA)
-        points = [(0, 0), (50, 25), (0, 50)]
-        pygame.draw.polygon(self.surface, theme['player'], points)
-        self.current_lane = lanes // 2
-        self.rect = self.surface.get_rect(
-            center=(100, lane_centres[self.current_lane])
-            )
-        self.key_pressed = False
-        
+        self.surface = pygame.Surface((50, 50))
+        self.surface.fill((255, 0, 0))
+        self.rect = self.surface.get_rect()
     def update(self,commands, pressed_keys):
         try:
             request = commands.get_nowait()
             movement = request["command"]
             print("Got from queue:", repr(request), type(request))
             print(movement)
-            if movement == "up" and self.current_lane > 0:
-                self.current_lane -= 1
-                self.key_pressed = True
-            elif movement == "down" and self.current_lane < lanes - 1:
-                self.current_lane += 1
-                self.key_pressed = True
+            match  movement:
+                case "up":
+                    self.rect.move_ip(0, -8)
+                case "down":
+                    self.rect.move_ip(0, 8)
+                case "left":
+                    self.rect.move_ip(-8, 0)
+                case "right":
+                    self.rect.move_ip(8, 0)
         except Exception:
             pass
-        if self.key_pressed == False: 
-            if pressed_keys[K_UP] and self.current_lane > 0:
-                    self.current_lane -= 1
-                    self.key_pressed = True
-            elif pressed_keys[K_DOWN] and self.current_lane < lanes - 1:
-                    self.current_lane += 1
-                    self.key_pressed = True
-        if not (pressed_keys[K_UP] or pressed_keys[K_DOWN]):
-            self.key_pressed = False
+        match pressed_keys:
+            case _ if pressed_keys[K_UP]:
+                self.rect.move_ip(0, -8)
+            case _ if pressed_keys[K_DOWN]:
+                self.rect.move_ip(0, 8)
+            case _ if pressed_keys[K_LEFT]:
+                self.rect.move_ip(-8, 0)
+            case _ if pressed_keys[K_RIGHT]:
+                self.rect.move_ip(8, 0)
+                
         match self.rect:
             case _ if self.rect.left < 0:
-                    self.rect.left = 0
+                self.rect.left = 0
             case _ if self.rect.right > screen_width:
-                    self.rect.right = 800
+                self.rect.right = 800
             case _ if self.rect.top < 0:
-                    self.rect.top = 0
+                self.rect.top = 0
             case _ if self.rect.bottom > screen_height:
-                    self.rect.bottom = 600
-        self.rect.center = (100,lane_centres[self.current_lane])
-    
+                self.rect.bottom = 600
 class Enemy(pygame.sprite.Sprite):
-    def __init__(self,speed,amplitude,pitch):
+    def __init__(self,speed):
         super(Enemy, self).__init__()
-        if pitch <= 0.33:
-            size = (80,lane_height / 2 )
-            colour = theme["enemy_low"]
-        elif pitch <= 0.66:
-            size = (160,lane_height / 2 )
-            colour = theme["enemy_mid"]
-        else:
-            size = (240,lane_height / 2 )
-            colour = theme["enemy_high"]
-        self.amplitude = amplitude
-        lane_index =lanes - 1 - min(int(amplitude / screen_height * lanes), lanes - 1)
-        self.speed = - speed
-        self.surface = pygame.Surface(size, pygame.SRCALPHA)
-        shape = pygame.Rect((0, 0), size)
-        pygame.draw.rect(self.surface, colour,shape, border_radius=10)
+        self.surface = pygame.Surface((30, 30))
+        self.surface.fill((0, 0, 255))
         self.rect = self.surface.get_rect(
             center=(
                 screen_width,
-                lane_centres[lane_index])
+                random.randint(0, screen_height),)
         )
-         
+        self.speed = - speed     
     def update(self):
         self.rect.move_ip(self.speed, 0)
         if self.rect.right < 0:
             self.kill()
-        if self.speed == 0: self.kill()
-class background:
-    def __init__(self,screen,theme):
-        self.screen = screen
-        self.theme = theme
-        self.screen_width, self.screen_height = screen.get_size()
-        self.center_x, self.center_y = self.screen_width // 2, self.screen_width // 2
-        self.beat_flash_intensity = 0.0
-    def on_beat(self):
-        self.beat_flash_intensity = 1.0
-    def update(self):
-        self.beat_flash_intensity *= 0.01 # decay factor per frame
-        if self.beat_flash_intensity < 0.01:
-            self.beat_flash_intensity = 0.0
-    def draw(self):
-        self.screen.fill(self.theme["bg"])  
-        if self.beat_flash_intensity > 0:
-            # Overlay the flash with alpha based on intensity
-            flash_surf = pygame.Surface(self.screen.get_size(), pygame.SRCALPHA)
-            alpha = int(self.beat_flash_intensity * 255)
-            flash_surf.fill((*self.theme["bg_flash"], alpha))
-            self.screen.blit(flash_surf, (0, 0))
-class synthwave_bg(background):
-    def __init__(self,screen,theme):
-        super().__init__(screen,theme)
-        self.sun_y = int(self.screen_height * 0.95)
-        
-        self.sun_core_r = 145
-        self.sun_glow_r = 150
-        self.sun_core_colour = self.theme["enemy_high"]
-        self.sun_glow_colour = self.theme["player"] + (40,)
-        
-        self.beat_pulse = 0
-        
-        self.scan_line_y = 0
-        self.scan_line_speed = 0.1
-        self.scan_line_colour = self.theme["enemy_low"] + (10,)
-        
-      
-        self.ray_alpha = 40
-        
-    def on_beat(self):
-        super().on_beat()
-        self.beat_pulse = 10
-    
-    def update(self):
-        super().update()
-        self.beat_pulse *= 0.85
-        if self.beat_pulse < 0.1: self.beat_pulse = 0
-        
-        self.scan_line_y = (self.scan_line_y + self.scan_line_speed)
-        self.scan_line_y += self.scan_line_speed
-        if self.scan_line_y >= 8:  # line spacing
-            self.scan_line_y -= 8  
-        scan_surf = pygame.Surface((self.screen_width, self.screen_height), pygame.SRCALPHA)
-        line_spacing = 8
-        y = -line_spacing + self.scan_line_y
-        while y < self.screen_height:
-            pygame.draw.line(scan_surf, self.scan_line_colour, (0, int(y)), (self.screen_width, int(y)), 2)
-            y += line_spacing
-        self.screen.blit(scan_surf, (0, 0))
-        
-    def draw(self):
-        super().draw()
-        current_core_r = int(self.sun_core_r+ self.beat_pulse)
-        current_glow_r = int(self.sun_glow_r + self.beat_pulse * 1.5)
-
-        glow_surf = pygame.Surface((current_glow_r * 2, current_glow_r * 2), 
-                                   pygame.SRCALPHA)
-        pygame.draw.circle(glow_surf, 
-                           self.sun_glow_colour, 
-                           (current_glow_r, current_glow_r), 
-                           current_glow_r)
-        
-        self.screen.blit(glow_surf, (self.center_x - current_glow_r, 
-                                     self.sun_y - current_glow_r))
-        
-
-        sun_surf_size = current_core_r * 2
-        sun_surf = pygame.Surface((sun_surf_size, sun_surf_size), pygame.SRCALPHA)
-        color_top = pygame.Color(*self.sun_core_colour)
-        color_bottom = pygame.Color(*self.theme["player"])
-
-        solid_top_height = 80 
-        
-        base_line_spacing = 20
-        
-        for y in range(0, sun_surf_size, base_line_spacing):
-            y_ratio = y / sun_surf_size
-            current_color = color_top.lerp(color_bottom, y_ratio)
-            current_line_thickness = 0 
             
-            if y < solid_top_height:
-                current_line_thickness = 20 
-     
-            else:
-                aggressive_y_ratio = (y - solid_top_height) / (sun_surf_size - solid_top_height)
-                
-                current_line_thickness = int(12 - (aggressive_y_ratio * 4)) 
-                current_line_thickness = max(1, current_line_thickness) 
-                
-            pygame.draw.line(sun_surf, 
-                             current_color, 
-                             (0, y),
-                             (sun_surf_size, y), 
-                             current_line_thickness) 
-
-        # Now, create a circular mask
-        mask_surf = pygame.Surface((sun_surf_size, sun_surf_size), pygame.SRCALPHA)
-        pygame.draw.circle(mask_surf, 
-                           (255, 255, 255), 
-                           (current_core_r, current_core_r),
-                           current_core_r)
-        sun_surf.blit(mask_surf, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
-
-        self.screen.blit(sun_surf, (self.center_x - current_core_r, 
-                                     self.sun_y - current_core_r))
-        
-     
-        scan_surf = pygame.Surface((self.screen_width, self.screen_height), pygame.SRCALPHA)
-        for y in range(int(self.scan_line_y), self.screen_height, 8):
-            pygame.draw.line(
-                scan_surf,
-                self.scan_line_colour, 
-                (0, y),
-                (self.screen_width, y),
-                2)
-        self.screen.blit(scan_surf, (0, 0))
-
-class ice_bg(background):
-    def __init__(self, screen, theme):
-        super().__init__(screen, theme)
-
-        self.beat_pulse = 0
-        self.particle_count = 100
-        self.particles = []
-        self.screen_center = (self.screen_width // 2, self.screen_height // 2)
-        
-        for i in range(self.particle_count):
-            self.particles.append({
-                "x": random.randint(0, self.screen_width),
-                "y": random.randint(0, self.screen_height),
-                "speed": random.uniform(1, 3),
-                "glow_radius": random.randint(10, 30)
-            })
-
-    def on_beat(self):
-        super().on_beat()
-        # Trigger the pulse
-        self.beat_pulse = 1.5
-
-    def update(self):
-        super().update()
-        
-        # Decay the pulse over time
-        self.beat_pulse *= 0.90
-        if self.beat_pulse < 0.1:
-            self.beat_pulse = 0
-
-        # Update particles
-        for p in self.particles:
-            p['y'] += p['speed'] + self.beat_pulse
-            p['x'] += math.sin(time.time() + p['x']) * 0.5
-            if p['y'] > self.screen_height:
-                p['y'] = 0
-                p['x'] = random.randint(0, self.screen_width)
-            
-
-    def _draw_stylized_snowflake(self, surface, center, length, color, main_width, side_width, foot_length_ratio=0.2, foot_angle_offset_degrees=30):
-        cx, cy = center
-        side_len = length * 0.3
-        angle_offset = math.radians(20)
-        
-        foot_length = length * foot_length_ratio
-        foot_angle_offset_rad = math.radians(foot_angle_offset_degrees)
-
-        for i in range(6):
-            angle = math.radians(i * 60)
-            
-            x_end = cx + math.cos(angle) * length
-            y_end = cy + math.sin(angle) * length
-            pygame.draw.line(surface, color, (cx, cy), (x_end, y_end), main_width)
-            
-            foot1_x = x_end + math.cos(angle - foot_angle_offset_rad) * foot_length
-            foot1_y = y_end + math.sin(angle - foot_angle_offset_rad) * foot_length
-            pygame.draw.line(surface, color, (x_end, y_end), (foot1_x, foot1_y), side_width)
-
-            foot2_x = x_end + math.cos(angle + foot_angle_offset_rad) * foot_length
-            foot2_y = y_end + math.sin(angle + foot_angle_offset_rad) * foot_length
-            pygame.draw.line(surface, color, (x_end, y_end), (foot2_x, foot2_y), side_width)
-            
-            x1 = cx + math.cos(angle - angle_offset) * side_len
-            y1 = cy + math.sin(angle - angle_offset) * side_len
-            pygame.draw.line(surface, color, (cx, cy), (x1, y1), side_width)
-            
-            x2 = cx + math.cos(angle + angle_offset) * side_len
-            y2 = cy + math.sin(angle + angle_offset) * side_len
-            pygame.draw.line(surface, color, (cx, cy), (x2, y2), side_width)
-
-    def draw_glow(self, pos, base_radius):
-        for i in range(5, 0, -1):
-            alpha = int(25 * i)
-            length = int(base_radius * (i / 5))
-            
-            glow_surf = pygame.Surface((length * 2, length * 2), pygame.SRCALPHA)
-            
-            glow_color = (*self.theme['lane_divider'], alpha)
-            main_width = max(2, i)
-            side_width = max(1, i - 1)
-            
-            self._draw_stylized_snowflake(glow_surf, (length, length), length, glow_color, main_width, side_width)
-            
-            self.screen.blit(glow_surf, (pos[0] - length, pos[1] - length))
-
-    def draw(self):
-        super().draw()
-        
-        if not hasattr(self, 'smoothed_pulse'):
-            self.smoothed_pulse = 0.0
-        
-        smoothing_factor = 0.15 # You can tune this (0.1 is slower, 0.5 is faster)
-        self.smoothed_pulse += (self.beat_pulse - self.smoothed_pulse) * smoothing_factor
-        
-        for p in self.particles: 
-            pygame.draw.circle(self.screen, self.theme['lane_divider'], (p['x'], p['y']), 2)
-        
-        center_glow_radius = 60 + self.smoothed_pulse * 80
-        self.draw_glow(self.screen_center, center_glow_radius)
-        
-        color = self.theme['lane_divider']
-        length = 70 + self.smoothed_pulse * 50
-
-        self._draw_stylized_snowflake(self.screen, self.screen_center, length, color, 3, 2)
-themes = {
-    "synthwave": {
-        "player": (255, 50, 200),
-        "enemy_low": (0, 180, 255),
-        "enemy_mid": (57, 255, 20),
-        "enemy_high": (255, 0, 255),
-        "bg": (40, 40, 40),
-        "bg_flash": (70, 70, 70),
-        "lane_divider": (255, 0, 255),
-        "background_class": synthwave_bg
-    },
-"ice": {
-    "player": (200, 255, 255),
-    "enemy_low": (0, 150, 255),
-    "enemy_mid": (0, 220, 255),
-    "enemy_high": (180, 255, 255),
-    "bg": (5, 15, 40),
-    "bg_flash": (100, 200, 255),
-    "lane_divider": (180, 255, 255),
-    "background_class": ice_bg
-}
-}
-theme = themes["ice"]
- 
-command = queue()
+command = Queue()
 async def controller_server(websocket,):
     global command
     async for message in websocket:
@@ -356,199 +81,390 @@ async def controller_server(websocket,):
 async def start_server():
     async with websockets.serve(controller_server, "0.0.0.0", 8765) as server:
        await server.serve_forever()
-def draw_text(screen,text,font,colour,center_pos):
-    img = font.render(text,True,colour)
-    rect = img.get_rect(center = center_pos)
-    screen.blit(img,rect)
 
-def game_start (screen,font_large,font_small):
-    while True:
-        screen.fill(theme["bg"])
-        draw_text(screen,"LONGI - TUNAL",font_large,theme["player"],(screen_width // 2, screen_height // 3))
-        draw_text(screen, "Press any key to Start", font_small, theme['lane_divider'], (screen_width // 2, screen_height // 2))
-        draw_text(screen, "UP/DOWN to Move", font_small, theme['lane_divider'], (screen_width // 2, screen_height // 2 + 50))
+# Run the WebSocket server in background thread
+threading.Thread(target=lambda: asyncio.run(start_server()), daemon=True).start()
+
+def get_background_color(amplitude, bpm):
+    """Calculate background color based on music data"""
+    try:
+        amp = float(amplitude)
+        tempo = float(bpm)
+        
+        # Map amplitude to intensity
+        intensity = min(amp / 100.0, 1.0) * 0.6  # Scale down for pastel
+        
+        # Map BPM to color (60-180 BPM range)
+        if tempo < 90:
+            # Soft Purple/Lavender (slow)
+            r = int(160 + intensity * 60)
+            g = int(140 + intensity * 50)
+            b = int(190 + intensity * 50)
+        elif tempo < 120:
+            # Soft Blue (medium)
+            r = int(130 + intensity * 50)
+            g = int(160 + intensity * 60)
+            b = int(210 + intensity * 40)
+        elif tempo < 150:
+            # Soft Green (fast)
+            r = int(150 + intensity * 50)
+            g = int(190 + intensity * 50)
+            b = int(160 + intensity * 40)
+        else:
+            # Soft Pink/Coral (very fast)
+            r = int(210 + intensity * 40)
+            g = int(150 + intensity * 50)
+            b = int(150 + intensity * 50)
+        
+        return (r, g, b)
+    except:
+        return (180, 180, 200)  # default soft blue
+  
+class BackgroundParticle:
+    """Floating particle for background effect"""
+    def __init__(self):
+        self.x = random.randint(0, screen_width)
+        self.y = random.randint(0, screen_height)
+        self.size = random.randint(2, 6)
+        self.speed_x = random.uniform(-0.5, 0.5)
+        self.speed_y = random.uniform(-0.5, 0.5)
+        self.alpha = random.randint(30, 100)
+        self.pulse_speed = random.uniform(0.02, 0.05)
+        self.pulse_offset = random.uniform(0, 6.28)  # 2*pi
+    
+    def update(self, intensity):
+        self.x += self.speed_x * (1 + intensity)
+        self.y += self.speed_y * (1 + intensity)
+        
+        # Wrap around screen
+        if self.x < 0: self.x = screen_width
+        if self.x > screen_width: self.x = 0
+        if self.y < 0: self.y = screen_height
+        if self.y > screen_height: self.y = 0
+        
+        self.pulse_offset += self.pulse_speed
+    
+    def draw(self, surface, color):
+        import math
+        pulse = (math.sin(self.pulse_offset) + 1) / 2  # 0 to 1
+        alpha = int(self.alpha * pulse)
+        size = int(self.size * (0.5 + pulse * 0.5))
+        
+        s = pygame.Surface((size * 2, size * 2), pygame.SRCALPHA)
+        pygame.draw.circle(s, (*color, alpha), (size, size), size)
+        surface.blit(s, (int(self.x - size), int(self.y - size)))
+
+def show_menu(screen):
+    """Display modern start menu"""
+    screen_width, screen_height = 800, 600
+    clock = pygame.time.Clock()
+    
+    # Menu animation
+    menu_alpha = 0
+    pulse_offset = 0
+    
+    waiting = True
+    while waiting:
+        import math
+        pulse_offset += 0.05
+        pulse = (math.sin(pulse_offset) + 1) / 2  # 0 to 1
+        
+        # Fade in effect
+        menu_alpha = min(255, menu_alpha + 5)
+        
+        # Gradient background
+        for y in range(screen_height):
+            color_value = int(100 + (y / screen_height) * 100)
+            pygame.draw.line(screen, (color_value - 50, color_value - 30, color_value + 50), 
+                           (0, y), (screen_width, y))
+        
+        # Animated particles in background
+        for i in range(20):
+            x = (i * 40 + pulse_offset * 20) % screen_width
+            y = (i * 30 + pulse_offset * 15) % screen_height
+            size = int(3 + pulse * 2)
+            s = pygame.Surface((size * 2, size * 2), pygame.SRCALPHA)
+            pygame.draw.circle(s, (255, 255, 255, 80), (size, size), size)
+            screen.blit(s, (int(x), int(y)))
+        
+        # Main box
+        box_width, box_height = 600, 400
+        box_x = (screen_width - box_width) // 2
+        box_y = (screen_height - box_height) // 2
+        
+        # Outer glow with pulse
+        for i in range(3):
+            glow_alpha = int((60 - i * 15) * (0.7 + pulse * 0.3))
+            glow_surf = pygame.Surface((box_width + i*10, box_height + i*10), pygame.SRCALPHA)
+            pygame.draw.rect(glow_surf, (100, 150, 255, glow_alpha), 
+                           (0, 0, box_width + i*10, box_height + i*10), border_radius=25)
+            screen.blit(glow_surf, (box_x - i*5, box_y - i*5))
+        
+        # Main menu box
+        box_surf = pygame.Surface((box_width, box_height), pygame.SRCALPHA)
+        box_surf.set_alpha(menu_alpha)
+        pygame.draw.rect(box_surf, (25, 30, 45, 240), (0, 0, box_width, box_height), border_radius=25)
+        pygame.draw.rect(box_surf, (100, 150, 255), (0, 0, box_width, box_height), 4, border_radius=25)
+        screen.blit(box_surf, (box_x, box_y))
+        
+        # Title with glow
+        font_title = pygame.font.Font(None, 100)
+        font_subtitle = pygame.font.Font(None, 50)
+        font_instruction = pygame.font.Font(None, 35)
+        
+        title_color = (100 + int(pulse * 100), 150 + int(pulse * 50), 255)
+        title = font_title.render("LONGI-TUNAL", True, title_color)
+        title.set_alpha(menu_alpha)
+        
+        subtitle = font_subtitle.render("Music Reactive Runner", True, (200, 200, 220))
+        subtitle.set_alpha(menu_alpha)
+        
+        # Pulsing instruction
+        instruction_alpha = int(menu_alpha * (0.5 + pulse * 0.5))
+        instruction = font_instruction.render("Press SPACE to Start", True, (150, 200, 255))
+        instruction.set_alpha(instruction_alpha)
+        
+        controls1 = font_instruction.render("Controls: Arrow Keys / WASD", True, (180, 180, 200))
+        controls1.set_alpha(menu_alpha)
+        
+        controls2 = font_instruction.render("Avoid the obstacles!", True, (180, 180, 200))
+        controls2.set_alpha(menu_alpha)
+        
+        # Position text
+        title_rect = title.get_rect(center=(screen_width // 2, screen_height // 2 - 100))
+        subtitle_rect = subtitle.get_rect(center=(screen_width // 2, screen_height // 2 - 30))
+        instruction_rect = instruction.get_rect(center=(screen_width // 2, screen_height // 2 + 60))
+        controls1_rect = controls1.get_rect(center=(screen_width // 2, screen_height // 2 + 120))
+        controls2_rect = controls2.get_rect(center=(screen_width // 2, screen_height // 2 + 160))
+        
+        screen.blit(title, title_rect)
+        screen.blit(subtitle, subtitle_rect)
+        screen.blit(instruction, instruction_rect)
+        screen.blit(controls1, controls1_rect)
+        screen.blit(controls2, controls2_rect)
+        
         pygame.display.flip()
+        clock.tick(60)
         
+        # Handle events
         for event in pygame.event.get():
-            if event.type == QUIT or (event.type == KEYDOWN and event.key == K_ESCAPE):
-                return "QUIT"
+            if event.type == pygame.QUIT:
+                return False
             elif event.type == KEYDOWN:
-                return "RUNNING"
-        try:
-            command.get_nowait()
-            return "RUNNING"
-        except Exception:
-            pass
-def game_over(screen,font_large,font_small,final_score):
-    while True:
-            screen.fill(theme['bg'])
-            draw_text(screen, "GAME OVER", font_large, theme['enemy_high'], (screen_width // 2, screen_height // 3))
-            draw_text(screen, f"Score: {final_score}", font_small, theme['player'], (screen_width // 2, screen_height // 2))
-            draw_text(screen, "Press any key to restart", font_small, theme['lane_divider'], (screen_width // 2, screen_height // 2 + 50))
-            pygame.display.flip()
+                if event.key == K_SPACE:
+                    return True
+                elif event.key == K_ESCAPE:
+                    return False
+    
+    return False
 
-            for event in pygame.event.get():
-                if event.type == QUIT or (event.type == KEYDOWN and event.key == K_ESCAPE):
-                    return "QUIT"
-                elif event.type == KEYDOWN:
-                    return "RUNNING"
-            try:
-                command.get_nowait()
-                return "RUNNING"
-            except:
-                pass
-            
-        
-        
-def game_main(music_data):
+def game(music_data):      
     pygame.init()
-    pygame.font.init() 
+    pygame.mixer.init()  # Explicitly initialize mixer
+    clock = pygame.time.Clock()
     screen_width, screen_height = 800, 600
     screen = pygame.display.set_mode((screen_width, screen_height))
-    pygame.display.set_caption("Longi - Tunal")
-   
-
-    try:
-        font_large = pygame.font.SysFont('Consolas', 72)
-        font_small = pygame.font.SysFont('Consolas', 30)
-    except:
-        font_large = pygame.font.Font(None, 80)
-        font_small = pygame.font.Font(None, 36)
-        print("Consolas not found")
-    game_state = "START"
-    while True:
-        if game_state == 'START':
-            result = game_start(screen, font_large, font_small)
-            if result == 'QUIT':
-                break # Exit the main loop
-            game_state = result
-        elif game_state == "RUNNING":
-            result = game(music_data,screen,font_large,font_small)
-            if result == "QUIT":
-                break
-            final_score = result
-            game_state = "GAME_OVER"
-        elif game_state == "GAME_OVER":
-            result = game_over(screen,font_large,font_small,final_score)
-            if result == "QUIT":
-                break
-            game_state = result
-    pygame.quit()
-  
-def game(music_data,screen,font_large,font_small):      
-    clock = pygame.time.Clock()  
-    theme = themes[random.choice(list(themes.keys()))]
-    fade_surface = pygame.Surface(screen.get_size())
-    fade_surface.fill((0, 0, 0)) 
-    fade_surface.set_alpha(0)
-    last_theme_change = 0
-    is_fading = False
-    fade_alpha = 0
     
-    try:
-        BgClass = theme['background_class']
-        background = BgClass(screen, theme)
-    except KeyError:
-        print(f"Warning: No 'background_class' for theme. Using BaseBackground.")
-        background = background(screen, theme)
-    except Exception as e:
-        print(e)
+    # Show menu first
+    if not show_menu(screen):
+        return  # Exit if menu returns False
+    
     player = Player()
     enemies = pygame.sprite.Group()
     all_sprites = pygame.sprite.Group()
-    all_sprites.add(player)
-    running = True    
+    all_sprites.add(player,enemies)
+    running = True
+    global command
+    
+    # Background color state
+    current_bg = (180, 180, 200)
+    target_bg = (180, 180, 200)
+    
+    # Create background particles
+    particles = [BackgroundParticle() for _ in range(50)]
+    
+    # Wave animation
+    wave_offset = 0
+    current_intensity = 0
+    
+    # Score system
     score = 0
+    current_bpm = 0
+    game_time = 0
+
     while running:
+        dt = clock.tick(120) / 1000.0  # Delta time in seconds
+        game_time += dt
+        
+        # Calculate score: BPM / Frame Rate
+        actual_fps = clock.get_fps()
+        if actual_fps > 0 and current_bpm > 0:
+            score = int((current_bpm / actual_fps) * 1000)
         for event in pygame.event.get():
             if ((event.type == KEYDOWN) and (event.key == K_ESCAPE)) or (event.type == pygame.QUIT):
-                return "QUIT"
+                pygame.quit()
+                running = False
         player.update(command,pygame.key.get_pressed())
         enemies.update()
-        background.update()
-        background.draw()
         
-        if is_fading:
-            next_bg.update()
-            next_bg.draw()
-            fade_alpha += 8  # adjust for speed (8 * frame_rate ≈ 1 sec)
-            fade_surface.set_alpha(255 - fade_alpha)
-            screen.blit(fade_surface, (0, 0))
-            if fade_alpha >= 255:
-                background = next_bg
-                theme = next_theme
-                is_fading = False
+        # Smooth background transition
+        current_bg = tuple(
+            int(current_bg[i] + (target_bg[i] - current_bg[i]) * 0.1)
+            for i in range(3)
+        )
+        screen.fill(current_bg)
         
-        lane_surface = pygame.Surface((screen_width, screen_height), pygame.SRCALPHA)
-        for i in range(1, lanes):
-            pygame.draw.line(
-                lane_surface,
-                (*theme["lane_divider"], 80), 
-                (0, i * lane_height),
-                (screen_width, i * lane_height),
-                2
-            )
-        screen.blit(lane_surface, (0, 0))
+        # Draw animated waves at bottom (speed based on music intensity)
+        import math
+        wave_speed = 0.02 + (current_intensity * 0.08)  # Faster with louder music
+        wave_offset += wave_speed
+        wave_amplitude = 10 + (current_intensity * 20)  # Higher waves with louder music
+        wave_color = tuple(max(0, c - 30) for c in current_bg)  # Darker shade
         
+        num_waves = int(2 + current_intensity * 3)  # More waves with louder music
+        for i in range(num_waves):
+            y_base = screen_height - 100 + i * 30
+            points = []
+            for x in range(0, screen_width + 10, 10):
+                y = y_base + math.sin((x / 50) + wave_offset + i) * wave_amplitude
+                points.append((x, y))
+            points.append((screen_width, screen_height))
+            points.append((0, screen_height))
+            if len(points) > 2:
+                s = pygame.Surface((screen_width, screen_height), pygame.SRCALPHA)
+                wave_alpha = int((30 + i * 20) * (0.5 + current_intensity * 0.5))
+                pygame.draw.polygon(s, (*wave_color, wave_alpha), points)
+                screen.blit(s, (0, 0))
+        
+        # Update and draw particles (more active with music)
+        num_active_particles = int(30 + current_intensity * 20)  # Show more particles when loud
+        for idx, particle in enumerate(particles[:num_active_particles]):
+            particle.update(current_intensity)
+            # Particle color based on background
+            particle_color = tuple(min(255, c + 50) for c in current_bg)
+            particle.draw(screen, particle_color)
+        
+        # Draw radial glow in center (pulsing with music)
+        glow_surface = pygame.Surface((screen_width, screen_height), pygame.SRCALPHA)
+        glow_intensity = int(30 + current_intensity * 120)  # Stronger glow with louder music
+        glow_size = 1.0 + (current_intensity * 0.8)  # Bigger glow with louder music
+        for i in range(5, 0, -1):
+            radius = int(150 * (i / 5) * glow_size)
+            alpha = int(glow_intensity / i)
+            pygame.draw.circle(glow_surface, (*current_bg, alpha), 
+                             (screen_width // 2, screen_height // 2), radius)
+        screen.blit(glow_surface, (0, 0))
+        
+        # Draw score UI (only Score and Time)
+        font_large = pygame.font.Font(None, 48)
+        
+        score_text = font_large.render(f"Score: {score}", True, (0, 0, 0))
+        screen.blit(score_text, (10, 10))
+        
+        time_text = font_large.render(f"Time: {game_time:.1f}s", True, (0, 0, 0))
+        screen.blit(time_text, (10, 60))
+        
+        pygame.draw.circle(screen, (0, 0, 0), (750, 300), 15)
         for entity in all_sprites:
             screen.blit(entity.surface,entity.rect)
-        draw_text(screen, f"Score: {score:.0f}", font_small, theme['player'], (screen_width - 100, 30))
+        
+        # Check collision
         if pygame.sprite.spritecollideany(player, enemies):
-            player.kill()
-            return round(score)
+            # Modern Game Over screen
+            overlay = pygame.Surface((screen_width, screen_height), pygame.SRCALPHA)
+            overlay.fill((0, 0, 0, 220))  # Dark semi-transparent
+            screen.blit(overlay, (0, 0))
+            
+            # Draw animated box
+            box_width, box_height = 500, 350
+            box_x = (screen_width - box_width) // 2
+            box_y = (screen_height - box_height) // 2
+            
+            # Outer glow
+            for i in range(3):
+                glow_surf = pygame.Surface((box_width + i*10, box_height + i*10), pygame.SRCALPHA)
+                pygame.draw.rect(glow_surf, (255, 70, 70, 40-i*10), 
+                               (0, 0, box_width + i*10, box_height + i*10), border_radius=20)
+                screen.blit(glow_surf, (box_x - i*5, box_y - i*5))
+            
+            # Main box
+            box_surf = pygame.Surface((box_width, box_height), pygame.SRCALPHA)
+            pygame.draw.rect(box_surf, (30, 30, 40, 250), (0, 0, box_width, box_height), border_radius=20)
+            pygame.draw.rect(box_surf, (255, 70, 70), (0, 0, box_width, box_height), 3, border_radius=20)
+            screen.blit(box_surf, (box_x, box_y))
+            
+            # Text
+            font_title = pygame.font.Font(None, 90)
+            font_subtitle = pygame.font.Font(None, 45)
+            font_score = pygame.font.Font(None, 55)
+            font_small = pygame.font.Font(None, 35)
+            
+            title = font_title.render("GAME OVER", True, (255, 90, 90))
+            subtitle = font_subtitle.render("You Hit an Obstacle!", True, (220, 220, 220))
+            final_score = font_score.render(f"Final Score: {score}", True, (100, 200, 255))
+            instruction = font_small.render("Press ESC to Exit", True, (180, 180, 180))
+            
+            title_rect = title.get_rect(center=(screen_width // 2, screen_height // 2 - 80))
+            subtitle_rect = subtitle.get_rect(center=(screen_width // 2, screen_height // 2 - 10))
+            score_rect = final_score.get_rect(center=(screen_width // 2, screen_height // 2 + 50))
+            instruction_rect = instruction.get_rect(center=(screen_width // 2, screen_height // 2 + 110))
+            
+            screen.blit(title, title_rect)
+            screen.blit(subtitle, subtitle_rect)
+            screen.blit(final_score, score_rect)
+            screen.blit(instruction, instruction_rect)
+            
+            pygame.display.flip()
+            
+            # Wait for ESC to exit
+            waiting = True
+            while waiting:
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        waiting = False
+                        running = False
+                    elif event.type == KEYDOWN and event.key == K_ESCAPE:
+                        waiting = False
+                        running = False
+                        pygame.quit()
+                        return  # Exit the function completely
+            
         pygame.display.flip()
         try:
             md = music_data.get_nowait()
-            score += float(md["bpm"]/240) 
-            game_speed = float(md['bpm']) / np.interp(score, [0, 100], [27, 9])
-            speed = (game_speed)
-            background.on_beat()
-            for enemy in enemies:
-                enemy.speed = - game_speed
-
-            # Prevent enemies too close together in the same lane
-            too_close = any((abs(enemy.rect.centerx - screen_width) < 200) for enemy in enemies)
-
-            if not too_close:
-                new_enemy = Enemy(speed, float(md['amplitude']), float(md['pitch']))
+            
+            # Update intensity for effects
+            current_intensity = min(float(md['amplitude']) / 100.0, 1.0)
+            
+            # Update BPM for score calculation
+            current_bpm = float(md['bpm'])
+            
+            # Update target background color
+            target_bg = get_background_color(md['amplitude'], md['bpm'])
+            
+            if random.randint(0, 100) < int(float(md['amplitude'])):
+                speed = (float(md['bpm'])/25) + 1
+                ##print("Spawning enemy with speed:", speed)
+                new_enemy = Enemy(speed)
                 enemies.add(new_enemy)
                 all_sprites.add(new_enemy)
-                        
         except Empty:
             ##print("Empty Queue")
             pass
         except Exception as e:
             print(f"analysis failed {e}")
-            
-        if int(score) % 15 == 0 and int(score) != last_theme_change:
-            new_theme_name = random.choice(list(themes.keys()))
-            while themes[new_theme_name] == theme:
-                new_theme_name = random.choice(list(themes.keys()))
-
-            next_theme = themes[new_theme_name]
-            next_bg = next_theme["background_class"](screen, next_theme)
-
-        # Begin fade
-            is_fading = True
-            fade_alpha = 0
-            last_theme_change = int(score)
-      
-        clock.tick(120) ## cap the frame rate to 120 FPS (useful for timing with the sound wave form in furture)
 
 def get_music_data(music_data):
     import sounddevice as sd
     import numpy as np
     from collections import deque
     import time
-    BASS_LOW,BASS_HIGH = 20,150
-    PITCH_LOW,PITCH_HIGH = 150,1500
+    BASS_LOW = 20
+    BASS_HIGH = 150
     WINDOW_SEC = 5
-    bass_history = deque(maxlen=50)
-    bass_history.extend([0] * 22)
-    amplitude_history = deque(maxlen=22)
-    threshold_multiplier = 1.1
-    bpm = 0
+    THRESHOLD_MULT = 1.5 
     beat_times = deque()
+    prev_bass_amp = 0 
     SR = 44100
     BLOCK_SIZE = 1024  # Number of frames per read
 
@@ -562,63 +478,52 @@ def get_music_data(music_data):
             break
 
     if device_index is None:
-        raise RuntimeError("VB Cable not found. Make sure it's installed and enabled.")
-    
-    def get_amplitude(mono):
-        nonlocal amplitude_history
-        amplitude = (np.sqrt(np.mean(mono ** 2))) 
-        amplitude_history.append(amplitude)
-        min_amplitude = min(amplitude_history)
-        max_amplitude = max(amplitude_history)
-        if max_amplitude - min_amplitude < 1e-5:
-            mapped_value = 0
-        else:
-            mapped_value = np.interp(amplitude, [min_amplitude, max_amplitude], [0, 600])
-        return f"{mapped_value:.0f}"
-    
-    def get_bass_amp(spectrum,freqs):
-        bass_range = (freqs >= BASS_LOW) & (freqs <= BASS_HIGH)
-        return np.mean(np.abs(spectrum[bass_range]))
+        print("VB Cable not found, using default input device")
+        device_index = None
 
-    def get_pitch(spectrum,freqs):
-        pitch_range = (freqs >= PITCH_LOW) & (freqs <= PITCH_HIGH)
-        if np.any(pitch_range):
-            pitch_freq = freqs[pitch_range][np.argmax(np.abs(spectrum[pitch_range]))]
-            scale = (pitch_freq - PITCH_LOW) / (PITCH_HIGH - PITCH_LOW)
-            pitch = np.clip(scale, 0.0, 1.0)
+    def get_amplitude(indata):
+        mono = np.mean(indata, axis=1)
+        amplitude = np.sqrt(np.mean(mono ** 2)) * 100
+        return f"{amplitude:.2f}"
+
+    def get_current_bpm(indata):
+        nonlocal prev_bass_amp, beat_times
+        mono = np.mean(indata, axis=1)
+
+        spectrum = np.fft.rfft(mono)
+        freqs = np.fft.rfftfreq(len(mono), 1/SR)
+        bass_range = (freqs >= BASS_LOW) & (freqs <= BASS_HIGH)
+        bass_amp = np.mean(np.abs(spectrum[bass_range]))
+
+        now = time.time()
+
+        if bass_amp > prev_bass_amp * THRESHOLD_MULT and bass_amp > 0.2:
+            if len(beat_times) == 0 or now - beat_times[-1] > 0.2:  # avoid double-counting
+                beat_times.append(now)
+
+        prev_bass_amp = bass_amp
+
+        while beat_times and now - beat_times[0] > WINDOW_SEC:
+            beat_times.popleft()
+
+        if len(beat_times) > 1:
+            intervals = np.diff(beat_times)
+            bpm = 60 / np.mean(intervals)
         else:
-            pitch = 0
-        return pitch
+            bpm = 0
+
+        return f"{bpm:.0f}"
+
     with sd.InputStream(channels=2, samplerate=SR, blocksize=BLOCK_SIZE, device=device_index) as stream:
         while True:
             indata, _ = stream.read(BLOCK_SIZE)
-            mono = np.mean(indata, axis=1)
-            spectrum = np.fft.rfft(mono)
-            freqs = np.fft.rfftfreq(len(mono), 1/SR)
-            bass_amp = get_bass_amp(spectrum,freqs)
-    
-            now = time.time()   
-            threshold = np.mean(bass_history) *threshold_multiplier
-            if bass_amp > threshold and bass_amp > 0.2:
-                if len(beat_times) == 0 or now - beat_times[-1] > 0.2:  # avoid double-counting
-                    beat_times.append(now)      
-                    amplitude = get_amplitude(mono)
-                    pitch = get_pitch(spectrum,freqs)
-                    music_data.put({'amplitude': amplitude, 'bpm': bpm,'pitch' : pitch})
-            if len(beat_times) > 1:
-                intervals = np.diff(beat_times)
-                bpm = 60 / np.mean(intervals)
-            bass_history.append(bass_amp)
-            while beat_times and now - beat_times[0] > WINDOW_SEC:
-                beat_times.popleft()
-
-    
-                
+            amplitude = get_amplitude(indata)
+            bpm = get_current_bpm(indata)
+            music_data.put({'amplitude': amplitude, 'bpm': bpm})
 
 if __name__ == "__main__":
     music_data = Queue()
-    threading.Thread(target=lambda: asyncio.run(start_server()), daemon=True).start()
     p1 = Process(target=get_music_data, args=(music_data,))
     p1.start()
-    game_main(music_data)
+    game(music_data)
     p1.join()
