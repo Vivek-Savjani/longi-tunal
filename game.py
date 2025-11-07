@@ -95,9 +95,6 @@ async def controller_server(websocket,):
 async def start_server():
     async with websockets.serve(controller_server, "0.0.0.0", 8765) as server:
        await server.serve_forever()
-
-# Run the WebSocket server in background thread
-threading.Thread(target=lambda: asyncio.run(start_server()), daemon=True).start()
   
 def game(music_data):      
     pygame.init()
@@ -223,6 +220,7 @@ def get_music_data(music_data):
 
 if __name__ == "__main__":
     music_data = Queue()
+    threading.Thread(target=lambda: asyncio.run(start_server()), daemon=True).start()
     p1 = Process(target=get_music_data, args=(music_data,))
     p1.start()
     game(music_data)
