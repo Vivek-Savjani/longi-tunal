@@ -341,7 +341,8 @@ def game_main(music_data):
     pygame.font.init() 
     screen_width, screen_height = 800, 600
     screen = pygame.display.set_mode((screen_width, screen_height))
-    pygame.display.set_caption("Rythm Rush")
+    pygame.display.set_caption("Longi - Tunal")
+   
 
     try:
         font_large = pygame.font.SysFont('Consolas', 72)
@@ -372,6 +373,14 @@ def game_main(music_data):
   
 def game(music_data,screen,font_large,font_small):      
     clock = pygame.time.Clock()  
+    theme = themes[random.choice(list(themes.keys()))]
+    fade_surface = pygame.Surface(screen.get_size())
+    fade_surface.fill((0, 0, 0)) 
+    fade_surface.set_alpha(0)
+    last_theme_change = 0
+    is_fading = False
+    fade_alpha = 0
+    
     try:
         BgClass = theme['background_class']
         background = BgClass(screen, theme)
@@ -394,8 +403,19 @@ def game(music_data,screen,font_large,font_small):
         enemies.update()
         background.update()
         background.draw()
+        
+        if is_fading:
+            next_bg.update()
+            next_bg.draw()
+            fade_alpha += 8  # adjust for speed (8 * frame_rate ≈ 1 sec)
+            fade_surface.set_alpha(255 - fade_alpha)
+            screen.blit(fade_surface, (0, 0))
+            if fade_alpha >= 255:
+                background = next_bg
+                theme = next_theme
+                is_fading = False
+        
         lane_surface = pygame.Surface((screen_width, screen_height), pygame.SRCALPHA)
-
         for i in range(1, lanes):
             pygame.draw.line(
                 lane_surface,
@@ -405,6 +425,7 @@ def game(music_data,screen,font_large,font_small):
                 2
             )
         screen.blit(lane_surface, (0, 0))
+        
         for entity in all_sprites:
             screen.blit(entity.surface,entity.rect)
         draw_text(screen, f"Score: {score:.0f}", font_small, theme['player'], (screen_width - 100, 30))
@@ -414,16 +435,39 @@ def game(music_data,screen,font_large,font_small):
         pygame.display.flip()
         try:
             md = music_data.get_nowait()
-            speed = (float(md['bpm'])/9)
-            new_enemy = Enemy(speed,float(md['amplitude']),float(md['pitch']))
-            enemies.add(new_enemy)
-            all_sprites.add(new_enemy)
             score += float(md["bpm"]/240) 
+            game_speed = float(md['bpm']) / np.interp(score, [0, 100], [27, 9])
+            speed = (game_speed)
+            for enemy in enemies:
+                enemy.speed = - game_speed
+
+            # Prevent enemies too close together in the same lane
+            too_close = any((abs(enemy.rect.centerx - screen_width) < 200) for enemy in enemies)
+
+            if not too_close:
+                new_enemy = Enemy(speed, float(md['amplitude']), float(md['pitch']))
+                enemies.add(new_enemy)
+                all_sprites.add(new_enemy)
+                        
         except Empty:
             ##print("Empty Queue")
             pass
         except Exception as e:
             print(f"analysis failed {e}")
+            
+        if int(score) % 15 == 0 and int(score) != last_theme_change:
+            new_theme_name = random.choice(list(themes.keys()))
+            while themes[new_theme_name] == theme:
+                new_theme_name = random.choice(list(themes.keys()))
+
+            next_theme = themes[new_theme_name]
+            next_bg = next_theme["background_class"](screen, next_theme)
+
+        # Begin fade
+            is_fading = True
+            fade_alpha = 0
+            last_theme_change = int(score)
+            print(f"Fading to {new_theme_name}")
       
         clock.tick(120) ## cap the frame rate to 120 FPS (useful for timing with the sound wave form in furture)
 
