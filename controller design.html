@@ -1,249 +1,112 @@
 <!doctype html>
 <html lang="en">
 <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sleek Web Controller</title>
-    <style>
-        /* General Styles */
-        body {
-            font-family: 'Inter', 'Segoe UI', Roboto, Arial, sans-serif;
-            background-color: #121212; /* Very dark background */
-            color: #e0e0e0; /* Light text */
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            margin: 0;
-            padding: 20px;
-        }
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neo Console Controller</title>
+<style>
+    /* ========== GLOBAL STYLES ========== */
+    body {
+        font-family: 'Inter', 'Segoe UI', Roboto, sans-serif;
+        background: radial-gradient(circle at 30% 30%, #0b0f1a 0%, #05060a 100%);
+        color: #e0e0e0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        margin: 0;
+        padding: 20px;
+    }
 
-        /* Controller Container */
-        .controller-box {
-            background: #1e1e1e; /* Slightly lighter than body for depth */
-            padding: 30px;
-            border-radius: 18px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), inset 0 0 0 1px #333; /* Dark shadow and subtle border */
-            width: 90%;
-            max-width: 350px;
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-        }
+    /* ========== CONTROLLER CARD ========== */
+    .controller-box {
+        background: rgba(30, 30, 40, 0.6);
+        backdrop-filter: blur(14px) saturate(160%);
+        -webkit-backdrop-filter: blur(14px) saturate(160%);
+        padding: 32px;
+        border-radius: 20px;
+        box-shadow: 0 0 20px rgba(0, 255, 255, 0.15),
+                    0 8px 25px rgba(0, 0, 0, 0.4),
+                    inset 0 0 0 1px rgba(255,255,255,0.1);
+        width: 90%;
+        max-width: 360px;
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+        transition: transform 0.3s ease;
+    }
 
-        h3 {
-            color: #4a90e2; /* Accent blue title */
-            margin-top: 0;
-            border-bottom: 1px solid #333;
-            padding-bottom: 15px;
-            text-align: center;
-        }
+    .controller-box:hover {
+        transform: translateY(-4px);
+    }
 
-        /* Status & Player Select Section */
-        .settings-bar {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
+    /* ========== HEADER ========== */
+    h3 {
+        color: #00eaff;
+        text-shadow: 0 0 8px rgba(0, 234, 255, 0.5);
+        margin: 0;
+        text-align: center;
+        letter-spacing: 0.5px;
+        font-weight: 600;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+        padding-bottom: 14px;
+    }
 
-        label {
-            font-weight: 500;
-            color: #a0a0a0;
-        }
-        
-        select {
-            padding: 8px 12px;
-            font-size: 16px;
-            border-radius: 8px;
-            border: 1px solid #444;
-            background-color: #2c2c2c;
-            color: #e0e0e0;
-            cursor: pointer;
-        }
+    /* ========== SETTINGS BAR ========== */
+    .settings-bar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
 
-        /* Status Indicator Styling (Pill shape) */
-        #status {
-            font-weight: 600;
-            padding: 4px 10px;
-            border-radius: 12px;
-            font-size: 0.9em;
-            text-transform: uppercase;
-            min-width: 80px;
-            text-align: center;
-        }
+    label {
+        font-weight: 500;
+        color: #b0b0b0;
+    }
 
-        /* D-Pad Layout Container */
-        .dpad-container {
-            display: grid;
-            grid-template-areas:
-                ". up ."
-                "left center right"
-                ". down .";
-            gap: 5px;
-            margin-top: 15px;
-            width: 150px; /* Fixed width for the d-pad area */
-            height: 150px;
-            margin-left: auto;
-            margin-right: auto;
-        }
+    select {
+        padding: 8px 14px;
+        font-size: 16px;
+        border-radius: 10px;
+        border: 1px solid rgba(255,255,255,0.15);
+        background: rgba(255,255,255,0.08);
+        color: #e0e0e0;
+        cursor: pointer;
+        transition: border-color 0.2s, box-shadow 0.2s;
+    }
 
-        /* D-Pad Buttons */
-        .dpad-button {
-            background-color: #383838;
-            color: #e0e0e0;
-            border: none;
-            border-radius: 6px;
-            font-size: 1.2em;
-            font-weight: bold;
-            cursor: pointer;
-            transition: background-color 0.1s, box-shadow 0.1s, transform 0.05s;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            height: 100%;
-            width: 100%;
-            padding: 0;
-            box-shadow: inset 0 -3px 0 0 #2b2b2b; /* Subtle internal shadow */
-        }
-        
-        #btn-up { grid-area: up; }
-        #btn-down { grid-area: down; }
-        /* Placeholder for Left/Right - using your original Up/Down commands */
-        .dpad-container > .placeholder {
-             grid-area: left; /* Using left area for an example */
-             /* We will only display up and down for now, keeping the structure */
-             display: none; 
-        }
+    select:hover {
+        border-color: #00eaff;
+        box-shadow: 0 0 8px rgba(0, 234, 255, 0.3);
+    }
 
-        .dpad-button:hover:not(:disabled) {
-            background-color: #4a90e2; /* Accent blue hover */
-            color: white;
-            box-shadow: inset 0 -3px 0 0 #3b73b8;
-        }
+    /* ========== STATUS INDICATOR ========== */
+    #status {
+        font-weight: 600;
+        padding: 6px 14px;
+        border-radius: 14px;
+        font-size: 0.9em;
+        text-transform: uppercase;
+        text-align: center;
+        min-width: 100px;
+        transition: all 0.3s ease;
+    }
 
-        .dpad-button:active:not(:disabled) {
-            background-color: #3b73b8;
-            box-shadow: inset 0 1px 0 0 #3b73b8;
-            transform: translateY(2px); /* Press effect */
-        }
-        
-        .dpad-button:disabled {
-            background-color: #2c2c2c;
-            color: #555;
-            cursor: not-allowed;
-            box-shadow: none;
-            transform: none;
-        }
+    /* ========== D-PAD ========== */
+    .dpad-container {
+        display: grid;
+        grid-template-areas:
+            ". up ."
+            "left center right"
+            ". down .";
+        gap: 8px;
+        width: 150px;
+        height: 150px;
+        margin: 0 auto;
+    }
 
-    </style>
-</head>
-<body>
-    <div class="controller-box">
-        <h3>✨ Console Controller</h3>
-
-        <div class="settings-bar">
-            <div>
-                <label for="player">Player:</label>
-                <select id="player">
-                    <option value="1">Player 1</option>
-                    <option value="2">Player 2</option>
-                </select>
-            </div>
-            <span id="status">Connecting...</span>
-        </div>
-
-        <div class="dpad-container">
-            <button class="dpad-button" data-cmd="up" id="btn-up">▲</button>
-            <div class="placeholder"></div> 
-            <button class="dpad-button" data-cmd="down" id="btn-down">▼</button>
-        </div>
-    </div>
-
-    <script>
-        const statusEl = document.getElementById('status');
-        const playerSelect = document.getElementById('player');
-        // Select all D-Pad buttons
-        const buttons = Array.from(document.querySelectorAll('.dpad-button[data-cmd]'));
-
-        let ws;
-        const url = 'ws://localhost:8765';
-
-        function setButtonsDisabled(v){
-            buttons.forEach(b => b.disabled = v);
-        }
-
-        function updateStatus(text, state) {
-            statusEl.textContent = text;
-            statusEl.style.backgroundColor = '';
-            statusEl.style.color = '';
-
-            // Apply specific styles based on state
-            if (state === 'connected') {
-                 statusEl.style.backgroundColor = '#2ecc71'; /* Green */
-                 statusEl.style.color = '#1e1e1e';
-            } else if (state === 'connecting') {
-                 statusEl.style.backgroundColor = '#f39c12'; /* Orange */
-                 statusEl.style.color = '#1e1e1e';
-            } else if (state === 'error' || state === 'disconnected') {
-                 statusEl.style.backgroundColor = '#e74c3c'; /* Red */
-                 statusEl.style.color = 'white';
-            }
-        }
-
-        function connect(){
-            ws = new WebSocket(url);
-            updateStatus('Connecting...', 'connecting');
-            setButtonsDisabled(true);
-
-            ws.addEventListener('open', () => {
-                updateStatus('Connected', 'connected');
-                setButtonsDisabled(false);
-            });
-
-            ws.addEventListener('close', () => {
-                updateStatus('Disconnected - reconnecting...', 'disconnected');
-                setButtonsDisabled(true);
-                setTimeout(connect, 1000);
-            });
-
-            ws.addEventListener('error', () => {
-                updateStatus('Error', 'error');
-            });
-
-            ws.addEventListener('message', ev => {
-                console.log('recv:', ev.data);
-            });
-        }
-
-        function sendCommand(cmd){
-            if (!ws || ws.readyState !== WebSocket.OPEN) {
-                console.warn('WebSocket not open, dropping command:', cmd);
-                return;
-            }
-            const payload = {
-                player: parseInt(playerSelect.value, 10),
-                command: cmd
-            };
-            ws.send(JSON.stringify(payload));
-        }
-
-        // wire buttons
-        buttons.forEach(btn => {
-            btn.addEventListener('click', () => sendCommand(btn.dataset.cmd));
-        });
-
-        // keyboard support
-        window.addEventListener('keydown', e => {
-            const map = { ArrowUp: 'up', ArrowDown: 'down' };
-            if (map[e.key]) {
-                e.preventDefault();
-                sendCommand(map[e.key]);
-            }
-        });
-
-        // initial state
-        connect();
-    </script>
-</body>
-</html>
+    .dpad-button {
+        background: linear-gradient(180deg, #24242b 0%, #19191f 100%);
+        color: #e0e0e0;
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius:
