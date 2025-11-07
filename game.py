@@ -12,6 +12,8 @@ screen_width, screen_height = 800, 600
 lanes = 3
 lane_height = screen_height / lanes
 lane_centres = [int((i * lane_height) + (lane_height / 2)) for i in range(lanes)]
+
+score = 0
 class Player(pygame.sprite.Sprite):
     def __init__(self):
         super(Player, self).__init__()
@@ -290,12 +292,86 @@ async def controller_server(websocket,):
 async def start_server():
     async with websockets.serve(controller_server, "0.0.0.0", 8765) as server:
        await server.serve_forever()
-  
-def game(music_data):      
+def draw_text(screen,text,font,colour,center_pos):
+    img = font.render(text,True,colour)
+    rect = img.get_rect(center = center_pos)
+    screen.blit(img,rect)
+
+def game_start (screen,font_large,font_small):
+    while True:
+        screen.fill(theme["bg"])
+        draw_text(screen,"LONGI - TUNAL",font_large,theme["player"],(screen_width // 2, screen_height // 3))
+        draw_text(screen, "Press any key to Start", font_small, theme['lane_divider'], (screen_width // 2, screen_height // 2))
+        draw_text(screen, "UP/DOWN to Move", font_small, theme['lane_divider'], (screen_width // 2, screen_height // 2 + 50))
+        pygame.display.flip()
+        
+        for event in pygame.event.get():
+            if event.type == QUIT or (event.type == KEYDOWN and event.key == K_ESCAPE):
+                return "QUIT"
+            elif event.type == KEYDOWN:
+                return "RUNNING"
+        try:
+            command.get_nowait()
+            return "RUNNING"
+        except Exception:
+            pass
+def game_over(screen,font_large,font_small,final_score):
+    while True:
+            screen.fill(theme['bg'])
+            draw_text(screen, "GAME OVER", font_large, theme['enemy_high'], (screen_width // 2, screen_height // 3))
+            draw_text(screen, f"Score: {final_score}", font_small, theme['player'], (screen_width // 2, screen_height // 2))
+            draw_text(screen, "Press any key to restart", font_small, theme['lane_divider'], (screen_width // 2, screen_height // 2 + 50))
+            pygame.display.flip()
+
+            for event in pygame.event.get():
+                if event.type == QUIT or (event.type == KEYDOWN and event.key == K_ESCAPE):
+                    return "QUIT"
+                elif event.type == KEYDOWN:
+                    return "RUNNING"
+            try:
+                command.get_nowait()
+                return "RUNNING"
+            except:
+                pass
+            
+        
+        
+def game_main(music_data):
     pygame.init()
-    clock = pygame.time.Clock()
+    pygame.font.init() 
     screen_width, screen_height = 800, 600
     screen = pygame.display.set_mode((screen_width, screen_height))
+    pygame.display.set_caption("Rythm Rush")
+
+    try:
+        font_large = pygame.font.SysFont('Consolas', 72)
+        font_small = pygame.font.SysFont('Consolas', 30)
+    except:
+        font_large = pygame.font.Font(None, 80)
+        font_small = pygame.font.Font(None, 36)
+        print("Consolas not found")
+    game_state = "START"
+    while True:
+        if game_state == 'START':
+            result = game_start(screen, font_large, font_small)
+            if result == 'QUIT':
+                break # Exit the main loop
+            game_state = result
+        elif game_state == "RUNNING":
+            result = game(music_data,screen,font_large,font_small)
+            if result == "QUIT":
+                break
+            final_score = result
+            game_state = "GAME_OVER"
+        elif game_state == "GAME_OVER":
+            result = game_over(screen,font_large,font_small,final_score)
+            if result == "QUIT":
+                break
+            game_state = result
+    pygame.quit()
+  
+def game(music_data,screen,font_large,font_small):      
+    clock = pygame.time.Clock()  
     try:
         BgClass = theme['background_class']
         background = BgClass(screen, theme)
@@ -308,14 +384,12 @@ def game(music_data):
     enemies = pygame.sprite.Group()
     all_sprites = pygame.sprite.Group()
     all_sprites.add(player)
-    running = True
-    global command     
-
+    running = True    
+    score = 0
     while running:
         for event in pygame.event.get():
             if ((event.type == KEYDOWN) and (event.key == K_ESCAPE)) or (event.type == pygame.QUIT):
-                pygame.quit()
-                running = False
+                return "QUIT"
         player.update(command,pygame.key.get_pressed())
         enemies.update()
         background.update()
@@ -333,10 +407,10 @@ def game(music_data):
         screen.blit(lane_surface, (0, 0))
         for entity in all_sprites:
             screen.blit(entity.surface,entity.rect)
+        draw_text(screen, f"Score: {score:.0f}", font_small, theme['player'], (screen_width - 100, 30))
         if pygame.sprite.spritecollideany(player, enemies):
-            ##player.kill()
-            ##running = False
-            pass
+            player.kill()
+            return round(score)
         pygame.display.flip()
         try:
             md = music_data.get_nowait()
@@ -344,6 +418,7 @@ def game(music_data):
             new_enemy = Enemy(speed,float(md['amplitude']),float(md['pitch']))
             enemies.add(new_enemy)
             all_sprites.add(new_enemy)
+            score += float(md["bpm"]/240) 
         except Empty:
             ##print("Empty Queue")
             pass
@@ -437,5 +512,5 @@ if __name__ == "__main__":
     threading.Thread(target=lambda: asyncio.run(start_server()), daemon=True).start()
     p1 = Process(target=get_music_data, args=(music_data,))
     p1.start()
-    game(music_data)
+    game_main(music_data)
     p1.join()
