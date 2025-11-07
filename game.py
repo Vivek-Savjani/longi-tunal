@@ -1,4 +1,4 @@
-import pygame,threading,asyncio,websockets,json
+import pygame,threading,asyncio,websockets,json,math
 from multiprocessing import Process, Queue
 from queue import Queue as queue, Empty
 from pygame.locals import (
@@ -15,8 +15,9 @@ lane_centres = [int((i * lane_height) + (lane_height / 2)) for i in range(lanes)
 class Player(pygame.sprite.Sprite):
     def __init__(self):
         super(Player, self).__init__()
-        self.surface = pygame.Surface((50, 50))
-        self.surface.fill((255, 0, 255))
+        self.surface = pygame.Surface((50, 50), pygame.SRCALPHA)
+        points = [(0, 0), (50, 25), (0, 50)]
+        pygame.draw.polygon(self.surface, theme['player'], points)
         self.current_lane = lanes // 2
         self.rect = self.surface.get_rect(
             center=(100, lane_centres[self.current_lane])
@@ -61,17 +62,20 @@ class Enemy(pygame.sprite.Sprite):
     def __init__(self,speed,amplitude,pitch):
         super(Enemy, self).__init__()
         if pitch <= 0.33:
-            self.surface = pygame.Surface((80,lane_height / 2 ))
-            self.surface.fill((0, 0, 255))
+            size = (80,lane_height / 2 )
+            colour = theme["enemy_low"]
         elif pitch <= 0.66:
-            self.surface = pygame.Surface((160, lane_height / 2))
-            self.surface.fill((0, 255, 0))
+            size = (160,lane_height / 2 )
+            colour = theme["enemy_mid"]
         else:
-            self.surface = pygame.Surface((240, lane_height / 2))
-            self.surface.fill((255, 0, 0))
+            size = (240,lane_height / 2 )
+            colour = theme["enemy_high"]
         self.amplitude = amplitude
         lane_index =lanes - 1 - min(int(amplitude / screen_height * lanes), lanes - 1)
         self.speed = - speed
+        self.surface = pygame.Surface(size, pygame.SRCALPHA)
+        shape = pygame.Rect((0, 0), size)
+        pygame.draw.rect(self.surface, colour,shape, border_radius=10)
         self.rect = self.surface.get_rect(
             center=(
                 screen_width,
@@ -83,7 +87,118 @@ class Enemy(pygame.sprite.Sprite):
         if self.rect.right < 0:
             self.kill()
         if self.speed == 0: self.kill()
-            
+class background:
+    def __init__(self,screen,theme):
+        self.screen = screen
+        self.theme = theme
+        self.screen_width, self.screen_height = screen.get_size()
+        self.center_x, self.center_y = self.screen_width // 2, self.screen_width // 2
+        self.beat_flash_timer = 0
+    def on_beat(self):
+        self.beat_flash_timer = 5
+    def update(self):
+        if self.beat_flash_timer > 0:
+            self.beat_flash_timer -= 1
+    def draw(self):
+        if self.beat_flash_timer > 0:
+            self.screen.fill(self.theme["bg_flash"])
+        else:
+            self.screen.fill(self.theme["bg"])
+class synthwave_bg(background):
+    def __init__(self,screen,theme):
+        super().__init__(screen,theme)
+        self.sun_y = int(self.screen_height * 0.95)
+        
+        self.sun_core_r = 100
+        self.sun_glow_r = 150
+        self.sun_core_colour = self.theme["enemy_high"]
+        self.sun_glow_colour = self.theme["player"] + (40,)
+        
+        self.beat_pulse = 0
+        
+        self.scan_line_y = 0
+        self.scan_line_speed = 0.1
+        self.scan_line_colour = self.theme["enemy_low"] + (10,)
+        
+      
+        self.ray_alpha = 40
+        
+    def on_beat(self):
+        super().on_beat()
+        self.beat_pulse = 30
+    
+    def update(self):
+        super().update()
+        self.beat_pulse *= 0.85
+        if self.beat_pulse < 0.1: self.beat_pulse = 0
+        
+        self.scan_line_y = (self.scan_line_y + self.scan_line_speed)
+        self.scan_line_y += self.scan_line_speed
+        if self.scan_line_y >= 8:  # line spacing
+            self.scan_line_y -= 8  # wrap smoothly
+        scan_surf = pygame.Surface((self.screen_width, self.screen_height), pygame.SRCALPHA)
+        line_spacing = 8
+        y = -line_spacing + self.scan_line_y
+        while y < self.screen_height:
+            pygame.draw.line(scan_surf, self.scan_line_colour, (0, int(y)), (self.screen_width, int(y)), 2)
+            y += line_spacing
+        self.screen.blit(scan_surf, (0, 0))
+        
+    def draw(self):
+        super().draw()
+        current_core_r = int(self.sun_core_r+ self.beat_pulse)
+        current_glow_r = int(self.sun_glow_r + self.beat_pulse * 1.5)
+
+        glow_surf = pygame.Surface((current_glow_r * 2, current_glow_r * 2), 
+                                   pygame.SRCALPHA)
+        pygame.draw.circle(glow_surf, 
+                           self.sun_glow_colour, 
+                           (current_glow_r, current_glow_r), 
+                           current_glow_r)
+        
+        self.screen.blit(glow_surf, (self.center_x - current_glow_r, 
+                                     self.sun_y - current_glow_r))
+        
+
+        pygame.draw.circle(self.screen, 
+                           self.sun_core_colour, 
+                           (self.center_x, self.sun_y), 
+                           current_core_r)
+        
+     
+        scan_surf = pygame.Surface((self.screen_width, self.screen_height), pygame.SRCALPHA)
+        for y in range(int(self.scan_line_y), self.screen_height, 8):
+            pygame.draw.line(
+                scan_surf,
+                self.scan_line_colour, 
+                (0, y),
+                (self.screen_width, y),
+                2)
+        self.screen.blit(scan_surf, (0, 0))
+
+themes = {
+    "synthwave": {
+        "player": (255, 50, 200),
+        "enemy_low": (0, 180, 255),
+        "enemy_mid": (57, 255, 20),
+        "enemy_high": (255, 0, 255),
+        "bg": (40, 40, 40),
+        "bg_flash": (70, 70, 70),
+        "lane_divider": (255, 0, 255),
+        "background_class": synthwave_bg
+    },
+    "ice": {
+        "player": (255, 255, 255),     
+        "enemy_low": (0, 100, 255),  
+        "enemy_mid": (0, 200, 255),   
+        "enemy_high": (150, 220, 255), 
+        "bg": (10, 10, 30),         
+        "bg_flash": (100, 100, 150),
+        "lane_divider": (255, 255, 255) 
+    }
+}
+theme = themes["synthwave"]
+ 
 command = queue()
 async def controller_server(websocket,):
     global command
@@ -101,6 +216,14 @@ def game(music_data):
     clock = pygame.time.Clock()
     screen_width, screen_height = 800, 600
     screen = pygame.display.set_mode((screen_width, screen_height))
+    try:
+        BgClass = theme['background_class']
+        background = BgClass(screen, theme)
+    except KeyError:
+        print(f"Warning: No 'background_class' for theme. Using BaseBackground.")
+        background = background(screen, theme)
+    except Exception as e:
+        print(e)
     player = Player()
     enemies = pygame.sprite.Group()
     all_sprites = pygame.sprite.Group()
@@ -115,8 +238,19 @@ def game(music_data):
                 running = False
         player.update(command,pygame.key.get_pressed())
         enemies.update()
-        screen.fill((255, 255, 255))
+        background.update()
+        background.draw()
+        lane_surface = pygame.Surface((screen_width, screen_height), pygame.SRCALPHA)
 
+        for i in range(1, lanes):
+            pygame.draw.line(
+                lane_surface,
+                (*theme["lane_divider"], 80), 
+                (0, i * lane_height),
+                (screen_width, i * lane_height),
+                2
+            )
+        screen.blit(lane_surface, (0, 0))
         for entity in all_sprites:
             screen.blit(entity.surface,entity.rect)
         if pygame.sprite.spritecollideany(player, enemies):
